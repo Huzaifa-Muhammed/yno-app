@@ -1,0 +1,35 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    }
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "yno-app-e96f5",
+          "appId": "1:1082478194715:android:887a9e0ca1144002a2c8be",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "yno-app-e96f5",
+          "configurations": {
+            "android": "1:1082478194715:android:887a9e0ca1144002a2c8be",
+            "ios": "1:1082478194715:ios:30c6901b6354fdfca2c8be",
+            "web": "1:1082478194715:web:5f910f904c51234ca2c8be"
+          }
+        }
+      }
+    }
+  }
+}

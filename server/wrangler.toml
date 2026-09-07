@@ -1,0 +1,22 @@
+name = "yno-otp"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Plain vars (not secret). MAIL_FROM sends from nellab.org, verified in Resend
+# on 2026-08-21 (DKIM on resend._domainkey, return path on send.). Changing it
+# is a plain `wrangler deploy` — no secret needs re-setting.
+[vars]
+FIREBASE_PROJECT_ID = "yno-app-e96f5"
+APP_NAME = "YNO"
+# Public web API key (same one that ships in the APK). Used only to have Google
+# verify a client ID token via accounts:lookup — it grants nothing on its own.
+FIREBASE_API_KEY = "AIzaSyAC0lgsD_K86fhmpwaZWpEoFE6rVjMLafU"
+MAIL_FROM = "YNO <no-reply@nellab.org>"
+
+# Per-IP rate limiting. namespace_id is any stable integer, unique within this
+# Worker; `period` accepts only 10 or 60. The code tolerates this binding being
+# absent, so a config problem here degrades the service rather than opening it.
+[[ratelimits]]
+name = "IP_LIMITER"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }

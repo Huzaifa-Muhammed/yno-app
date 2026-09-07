@@ -1,0 +1,172 @@
+rules_version = '2';
+
+// YNO — prototype/wireframe security rules.
+//
+// This build performs several cross-user writes on the client:
+//  * referral bonus (a new user credits their referrer's points),
+//  * post-match awards (folding stats into every player's profile),
+//  * admin-created player accounts (the admin writes the new user's doc),
+//  * accountless guests joining a match (no auth at all — speed is the V1
+//    priority per the spec, OTP is V2).
+//
+// Because of that, writes cannot be locked to the document owner without
+// moving that logic to the Admin SDK. These rules require a signed-in user for
+// most paths but deliberately open the guest-join surface. Tighten before any
+// production launch (move point-awarding + guest joins server-side).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // The super-admin web dashboard signs in as one of these accounts (see
+    // lib/admin/admin_config.dart). Keep this list in sync with kSuperAdmins.
+    // It grants the extra delete access the panel needs on the manager-gated
+    // paths below (everything else already only needs signedIn()).
+    function isSuperAdmin() {
+      return signedIn() &&
+             request.auth.token.email in ['huzaifa@admin.com'];
+    }
+
+    // Mirrors TeamModel.canManage — owner or captain.
+    function teamManager(tid) {
+      let t = get(/databases/$(database)/documents/teams/$(tid)).data;
+      return signedIn() &&
+             (request.auth.uid == t.ownerUid || request.auth.uid == t.captainUid);
+    }
+
+    // Profiles are readable (public profiles, leaderboards, scorecards) and
+    // writable by any signed-in user (cross-user stat/point writes).
+    match /users/{uid} {
+      allow read: if true;
+      allow write: if signedIn();
+
+      match /notifications/{nid} {
+        allow read, write: if signedIn();
+      }
+      match /playedWith/{other} {
+        allow read, write: if signedIn();
+      }
+    }
+
+    // Matches are public (guest code lookup + public web scoreboard). Match
+    // docs are created/edited by authed admins; the join subcollections are
+    // open so accountless guests can enter the lobby via a link.
+    match /matches/{mid} {
+      allow read: if true;
+      allow write: if signedIn();
+
+      match /{document=**} {
+        allow read: if true;
+        allow write: if true;
+      }
+    }
+
+    // Guest records: created by accountless guests, claimed on sign-up.
+    match /guests/{gid} {
+      allow read, write: if true;
+    }
+
+    // Team docs are world-readable (public profiles, discovery, scorecards).
+    // Because of that they must not carry any secret: rules gate DOCUMENTS,
+    // not fields, so an `inviteCode` field here would be readable by anyone.
+    // The code lives in the `private` subcollection below instead.
+    match /teams/{tid} {
+      allow read: if true;
+      allow write: if signedIn();
+
+      // The team's invite code. Only the owner/captain may read it — this is
+      // what stops a member (or a passer-by) sharing the team out. The
+      // super-admin dashboard may also read/delete it.
+      match /private/{doc} {
+        allow read, write: if teamManager(tid) || isSuperAdmin();
+      }
+
+      // Roster invites + accountless guest names: not secret.
+      match /invites/{iid} {
+        allow read: if true;
+        allow write: if signedIn();
+      }
+      match /guests/{gid} {
+        allow read: if true;
+        allow write: if signedIn();
+      }
+
+      // Requests from players asking to join (the mirror of /invites). Same
+      // posture as invites: not secret, any signed-in user may write — they
+      // write their OWN request, and a manager deletes it on approve/decline.
+      match /joinRequests/{rid} {
+        allow read: if true;
+        allow write: if signedIn();
+      }
+    }
+
+    // Code → team resolution, keyed BY the code (doc id IS the code).
+    //   * `get` is allowed: you can only fetch a code you already possess, so
+    //     a friend can resolve one to join or challenge.
+    //   * `list` is DENIED: without it nobody can enumerate the collection and
+    //     harvest every team's code. This split is the whole point of the
+    //     collection — do not relax it to `allow read`.
+    //   * writes are manager-only, so nobody can repoint someone else's code.
+    match /teamCodes/{code} {
+      allow get: if signedIn();
+      // Enumeration stays denied for everyone EXCEPT the super-admin dashboard,
+      // which needs it to find/sweep codes when deleting teams.
+      allow list: if isSuperAdmin();
+      allow create, update:
+          if teamManager(request.resource.data.teamId) || isSuperAdmin();
+      allow delete: if teamManager(resource.data.teamId) || isSuperAdmin();
+    }
+
+    // Social graph.
+    match /friendships/{fid} {
+      allow read: if true;
+      allow write: if signedIn();
+    }
+    match /rivalries/{rid} {
+      allow read: if true;
+      allow write: if signedIn();
+    }
+
+    // Bug reports and suggestions from the app's side drawer.
+    //
+    // ⚠️ NOT world-readable, unlike almost everything else here. A report
+    // carries the reporter's email address and whatever free text they chose to
+    // type — which can be anything, including something they would not post
+    // publicly. Only the super-admin panel and the report's own author can read
+    // one back. Do not "make it consistent" with users/teams/matches.
+    //
+    // Create is open to any signed-in user, but the document must be theirs and
+    // must be a report: pinning `uid` to the caller stops one user filing
+    // reports in another's name, and capping the message keeps a paste bomb
+    // away from Firestore's 1 MB document ceiling. `status` is pinned to 'open'
+    // so nobody can file something pre-resolved and skip the queue.
+    //
+    // Update and delete are super-admin only — the author cannot edit a report
+    // after sending, which keeps what the admin reads identical to what was
+    // sent, and cannot resolve their own.
+    match /feedback/{fid} {
+      allow read: if isSuperAdmin() ||
+                     (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if signedIn() &&
+                       request.resource.data.uid == request.auth.uid &&
+                       request.resource.data.status == 'open' &&
+                       request.resource.data.type in ['bug', 'suggestion'] &&
+                       request.resource.data.message is string &&
+                       request.resource.data.message.size() > 0 &&
+                       request.resource.data.message.size() <= 2000;
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // Email OTPs for the claim-your-account flow (server/ — Cloudflare Worker).
+    // TOTALLY closed to clients: the Admin service account bypasses rules, so
+    // the OTP service reads and writes these while no app, signed in or not,
+    // can touch them. Do NOT relax this — the doc holds the code hash, the
+    // attempt counter and the send-throttle state, and a client that could
+    // write it could reset its own attempt count and brute-force the code.
+    match /emailOtps/{email} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "yno-join-site",
+  "private": true,
+  "version": "1.0.0",
+  "description": "join.nellab.org - the web landing page for a shared YNO match link (client point C12)",
+  "type": "module",
+  "scripts": {
+    "test": "node test/render_test.mjs",
+    "test:live": "node test/lookup_live_test.mjs",
+    "deploy": "firebase deploy --only hosting --project yalla-nellab-12650"
+  }
+}

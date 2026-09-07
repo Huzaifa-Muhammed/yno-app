@@ -1,0 +1,62 @@
+{
+  "project_info": {
+    "project_number": "1082478194715",
+    "project_id": "yno-app-e96f5",
+    "storage_bucket": "yno-app-e96f5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1082478194715:android:887a9e0ca1144002a2c8be",
+        "android_client_info": {
+          "package_name": "org.nellab.yno"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1082478194715-lp6um26apg0pjvp7lhp2lo8clb3red4o.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "org.nellab.yno",
+            "certificate_hash": "196ae24afb57c6b3519142652b94025effef50cf"
+          }
+        },
+        {
+          "client_id": "1082478194715-rns7fvukr5hevani5t5u26qfk2gr9a4s.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "org.nellab.yno",
+            "certificate_hash": "1101fde9237918e6c58616c88095ba070bb6a63d"
+          }
+        },
+        {
+          "client_id": "1082478194715-f3fb8e2rafjpt6gukiee6j2cfclk1ef2.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBPjUowMJYtDFSlU2NoF1o99Ec-zf0zz_I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1082478194715-f3fb8e2rafjpt6gukiee6j2cfclk1ef2.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1082478194715-sa1r4cl6u01u4nnmfvlkpvuq6r22m963.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.ynoapp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

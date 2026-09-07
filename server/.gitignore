@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+.dev.vars
+*.log
+# Never commit a service-account key.
+service_account*.json
+otp_state.json
+probe_uid.txt
+match_state.json
+tester.json

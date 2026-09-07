@@ -1,0 +1,16 @@
+{
+  "name": "yno-otp-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "YNO email-OTP service — issues 6-digit codes and mints Firebase custom tokens. Cloudflare Workers.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test": "node --test test/otp.test.mjs test/join.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.124.0"
+  }
+}

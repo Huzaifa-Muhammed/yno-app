@@ -1,0 +1,63 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Node dependencies. `server/.gitignore` covers its own; these are the other
+# two npm roots in the tree (the Firestore rules test harness and the join
+# site), which were staging ~9,600 files on the first `git add -A`.
+**/node_modules/
+
+# Local Firebase emulator output.
+firestore-debug.log
+firebase-debug.log
+ui-debug.log
+
+# Android Gradle build output (the root /build/ rule doesn't cover this one).
+/android/build/
+/android/.gradle/
+
+# Stale config backup from the org.nellab.yno migration — it holds the DELETED
+# Firebase app's ids and would only mislead.
+android/app/google-services.json.bak-pre-sha

@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Join a match · YNO</title>
+<meta name="description" content="Yalla Nellab — organise football matches, track scores, build your team.">
+<meta name="theme-color" content="#0C0F0A">
+<meta name="robots" content="noindex">
+
+<!-- Link preview (WhatsApp/Telegram/iMessage). Static on purpose: crawlers do
+     not run the JS that resolves the code, so this stays generic.
+     TODO: add <meta property="og:image"> once a 1200x630 PNG exists. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="YNO · Yalla Nellab">
+<meta property="og:title" content="You are invited to a match">
+<meta property="og:description" content="Open this link to get the match code and join on YNO.">
+<meta property="og:url" content="https://join.nellab.org">
+<meta name="twitter:card" content="summary">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230C0F0A'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%23D4FF00' stroke-width='4'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+<style>
+  /* Palette mirrors lib/theme/app_colors.dart - keep the two in step. */
+  :root{
+    --bg:#0C0F0A; --bg-deep:#070906; --surface:#161A14; --surface2:#1E241A;
+    --line:#252B21; --line2:#39412F;
+    --txt:#F1F4F2; --dim:#8B948F; --dim2:#5B635E;
+    --volt:#D4FF00; --volt-deep:#B0D400; --ink:#0C0F0A;
+    --win:#3DE27A; --loss:#FF4D5E; --gold:#FFC53D;
+    --r:16px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--txt);
+    font-family:'Barlow',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    min-height:100dvh; display:flex; flex-direction:column;
+    -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(70% 45% at 50% -8%, rgba(212,255,0,.10), transparent 70%),
+      radial-gradient(50% 30% at 50% 108%, rgba(212,255,0,.05), transparent 70%);
+    background-attachment:fixed;
+  }
+  .wrap{width:100%; max-width:470px; margin:0 auto; padding:22px 18px 34px; flex:1;
+        display:flex; flex-direction:column}
+
+  /* ---- header ---- */
+  header{display:flex; align-items:center; justify-content:space-between; margin-bottom:26px}
+  .brand{display:flex; align-items:center; gap:10px; text-decoration:none; color:inherit}
+  .mark{font-size:26px; font-weight:900; letter-spacing:-1px; line-height:1}
+  .mark span{color:var(--volt)}
+  .brand small{display:block; font-size:10px; font-weight:700; letter-spacing:1.6px;
+               color:var(--dim2); text-transform:uppercase; margin-top:2px}
+  .lang{background:transparent; border:1px solid var(--line2); color:var(--dim);
+        font-family:inherit; font-size:12px; font-weight:700; letter-spacing:.5px;
+        padding:7px 13px; border-radius:99px; cursor:pointer}
+  .lang:hover{color:var(--txt); border-color:var(--volt)}
+
+  /* ---- generic bits ---- */
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
+        padding:20px; margin-bottom:14px}
+  .eyebrow{font-size:11px; font-weight:800; letter-spacing:1.6px; text-transform:uppercase;
+           color:var(--dim2); margin:0 0 10px}
+  h1{font-size:27px; font-weight:800; line-height:1.15; margin:0 0 8px; letter-spacing:-.5px}
+  .sub{color:var(--dim); font-size:15px; line-height:1.5; margin:0}
+  .hide{display:none !important}
+
+  /* ---- match card ---- */
+  .pill{display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800;
+        letter-spacing:1.2px; text-transform:uppercase; padding:5px 11px; border-radius:99px;
+        border:1px solid var(--line2); color:var(--dim)}
+  .pill.lobby{color:var(--volt); border-color:rgba(212,255,0,.35); background:rgba(212,255,0,.08)}
+  .pill.live{color:var(--loss); border-color:rgba(255,77,94,.35); background:rgba(255,77,94,.08)}
+  .dot{width:6px; height:6px; border-radius:99px; background:currentColor}
+  .pill.live .dot{animation:blink 1.4s ease-in-out infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+
+  .teams{display:flex; align-items:center; gap:12px; margin:16px 0 4px}
+  .team{flex:1; min-width:0}
+  .team .nm{font-size:19px; font-weight:800; line-height:1.2; word-break:break-word}
+  .team.b{text-align:end}
+  .vs{font-size:12px; font-weight:800; color:var(--dim2); letter-spacing:1px; flex:none}
+  .score{font-size:30px; font-weight:900; letter-spacing:-1px; flex:none; color:var(--volt);
+         direction:ltr; unicode-bidi:isolate}
+  .meta{display:flex; flex-wrap:wrap; gap:7px; margin-top:16px}
+  .chip{font-size:12px; font-weight:600; color:var(--dim); background:var(--surface2);
+        border:1px solid var(--line); border-radius:8px; padding:5px 10px}
+  .side-note{margin-top:14px; padding:11px 13px; border-radius:11px; font-size:13.5px;
+             line-height:1.45; background:rgba(212,255,0,.07);
+             border:1px solid rgba(212,255,0,.22); color:var(--txt)}
+  .side-note b{color:var(--volt)}
+  .warn-note{margin-top:14px; padding:11px 13px; border-radius:11px; font-size:13.5px;
+             line-height:1.45; background:rgba(255,197,61,.07);
+             border:1px solid rgba(255,197,61,.25); color:var(--txt)}
+
+  /* ---- code block ---- */
+  .codebox{background:var(--bg-deep); border:1px dashed var(--line2); border-radius:var(--r);
+           padding:17px; text-align:center}
+  .codebox .eyebrow{margin-bottom:7px}
+  .code{font-size:37px; font-weight:900; letter-spacing:7px; color:var(--volt);
+        line-height:1.1; word-break:break-all; unicode-bidi:isolate; direction:ltr}
+  button.copy{margin-top:13px; width:100%; background:var(--volt); color:var(--ink);
+        border:0; border-radius:11px; padding:13px; font-family:inherit; font-size:15px;
+        font-weight:800; letter-spacing:.3px; cursor:pointer}
+  button.copy:active{background:var(--volt-deep)}
+  button.copy.done{background:var(--win)}
+
+  /* ---- steps ---- */
+  ol.steps{margin:0; padding:0; list-style:none; counter-reset:s}
+  ol.steps li{counter-increment:s; display:flex; gap:12px; align-items:flex-start;
+              padding:9px 0; font-size:14.5px; line-height:1.45; color:var(--txt)}
+  ol.steps li::before{content:counter(s); flex:none; width:23px; height:23px; border-radius:99px;
+              background:var(--surface2); border:1px solid var(--line2); color:var(--volt);
+              font-size:12px; font-weight:800; display:grid; place-items:center; margin-top:1px}
+
+  /* ---- code entry form ---- */
+  form{display:flex; gap:9px; margin-top:14px}
+  input{flex:1; min-width:0; background:var(--surface2); border:1px solid var(--line2);
+        border-radius:11px; padding:14px; color:var(--txt); font-family:inherit;
+        font-size:17px; font-weight:700; letter-spacing:2.5px; text-transform:uppercase}
+  input::placeholder{color:var(--dim2); letter-spacing:1px; font-weight:500; text-transform:none}
+  input:focus{outline:none; border-color:var(--volt)}
+  form button{flex:none; background:var(--volt); color:var(--ink); border:0; border-radius:11px;
+        padding:0 20px; font-family:inherit; font-size:15px; font-weight:800; cursor:pointer}
+  form button:disabled{opacity:.5; cursor:default}
+  .err{color:var(--loss); font-size:13.5px; font-weight:600; margin:11px 0 0; line-height:1.45}
+
+  /* ---- get the app ---- */
+  .get{text-align:center}
+  a.store{display:block; background:var(--volt); color:var(--ink); text-decoration:none;
+        border-radius:11px; padding:14px; font-size:15px; font-weight:800; margin-top:4px}
+  .get p{margin:8px 0 0; font-size:13.5px; color:var(--dim); line-height:1.5}
+
+  footer{text-align:center; color:var(--dim2); font-size:12px; margin-top:auto; padding-top:24px;
+         line-height:1.7}
+  footer a{color:var(--dim); text-decoration:none}
+  footer a:hover{color:var(--volt)}
+
+  .spinner{width:26px; height:26px; border:3px solid var(--line2); border-top-color:var(--volt);
+        border-radius:99px; animation:spin .7s linear infinite; margin:0 auto 14px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){*{animation:none !important}}
+
+  [dir="rtl"] input{letter-spacing:1px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <a class="brand" href="/">
+      <div>
+        <div class="mark">YN<span>O</span></div>
+        <small data-t="brandSub">Yalla Nellab</small>
+      </div>
+    </a>
+    <button class="lang" id="langBtn" type="button">العربية</button>
+  </header>
+
+  <!-- state: looking up -->
+  <section id="s-loading" class="card hide" style="text-align:center">
+    <div class="spinner"></div>
+    <p class="sub" data-t="checking">Checking the code…</p>
+  </section>
+
+  <!-- state: match found -->
+  <section id="s-match" class="hide">
+    <p class="eyebrow" data-t="invited">You are invited to a match</p>
+
+    <div class="card">
+      <span class="pill" id="statusPill"><i class="dot"></i><i id="statusText"></i></span>
+      <h1 id="matchName" class="hide" style="margin-top:12px"></h1>
+
+      <div class="teams">
+        <div class="team a"><div class="nm" id="teamA"></div></div>
+        <div class="vs" id="vsOrScore">vs</div>
+        <div class="team b"><div class="nm" id="teamB"></div></div>
+      </div>
+
+      <div class="meta" id="meta"></div>
+      <div class="side-note hide" id="sideNote"></div>
+      <div class="warn-note hide" id="warnNote"></div>
+    </div>
+
+    <div class="card codebox" id="codeCard">
+      <p class="eyebrow" data-t="matchCodeLabel">Match code</p>
+      <div class="code" id="codeOut"></div>
+      <button class="copy" id="copyBtn" type="button" data-t="copyCode">Copy code</button>
+    </div>
+
+    <div class="card" id="howCard">
+      <p class="eyebrow" data-t="howToJoin">How to join</p>
+      <ol class="steps">
+        <li data-t="step1">Install the YNO app</li>
+        <li data-t="step2">Open it and tap Join a match</li>
+        <li data-t="step3">Enter the code above</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- state: no code / not found / landing -->
+  <section id="s-find" class="hide">
+    <h1 data-t="landingTitle">Football, organised.</h1>
+    <p class="sub" data-t="landingSub">Create matches, pick teams, keep score and track every player's stats.</p>
+
+    <div class="card" style="margin-top:20px">
+      <p class="eyebrow" data-t="haveCode">Have a match code?</p>
+      <form id="codeForm" autocomplete="off">
+        <input id="codeInput" name="code" inputmode="latin" autocapitalize="characters"
+               spellcheck="false" maxlength="12" placeholder="e.g. AB12CD" data-t-ph="codeHint">
+        <button type="submit" data-t="find">Find</button>
+      </form>
+      <p class="err hide" id="findErr"></p>
+    </div>
+  </section>
+
+  <!-- always shown: get the app -->
+  <div class="card get" id="getCard">
+    <p class="eyebrow" data-t="getTheApp">Get the app</p>
+    <a class="store hide" id="storeLink" href="#" rel="noopener"></a>
+    <p id="storeNote" data-t="notOnStores">The app is not published to the app stores yet - ask whoever invited you to send you the install file.</p>
+  </div>
+
+  <footer>
+    <div>YNO · <span data-t="brandSub">Yalla Nellab</span></div>
+    <div><a href="https://nellab.org">nellab.org</a> · <a href="mailto:support@nellab.org">support@nellab.org</a></div>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---- config -------------------------------------------------------------
+  // The app's Firebase project. This API key is a public identifier (it already
+  // ships inside the Android app); read access is governed by firestore.rules,
+  // where `matches` is `allow read: if true` for exactly this guest lookup.
+  var PROJECT = 'yno-app-e96f5';
+  var API_KEY = 'AIzaSyAC0lgsD_K86fhmpwaZWpEoFE6rVjMLafU';
+
+  // Set this once the app is on a store and the button appears by itself.
+  // e.g. 'https://play.google.com/store/apps/details?id=org.nellab.yno'
+  var STORE_URL = null;
+
+  // ---- copy ---------------------------------------------------------------
+  // Strings that already exist in lib/l10n/ are copied verbatim so the web page
+  // and the app say the same thing in both languages.
+  var T = {
+    brandSub:      ['Yalla Nellab', 'يلا نلعب'],
+    checking:      ['Checking the code…', 'جارٍ التحقق من الرمز…'],
+    invited:       ['You are invited to a match', 'لقد تمت دعوتك إلى مباراة'],
+    vs:            ['vs', 'ضد'],
+    live:          ['LIVE', 'مباشر'],
+    lobbyOpen:     ['Lobby open', 'اللوبي مفتوح'],
+    ended:         ['Ended', 'انتهت'],
+    abandoned:     ['Abandoned', 'ملغاة'],
+    matchCodeLabel:['Match code', 'رمز المباراة'],
+    copyCode:      ['Copy code', 'نسخ الرمز'],
+    codeCopied:    ['Code copied', 'تم نسخ الرمز'],
+    howToJoin:     ['How to join', 'كيفية الانضمام'],
+    step1:         ['Install the YNO app', 'ثبّت تطبيق YNO'],
+    step2:         ['Open it and tap Join a match', 'افتحه واضغط على الانضمام إلى مباراة'],
+    step3:         ['Enter the code above', 'أدخل الرمز أعلاه'],
+    youWillJoin:   ['You will join', 'ستنضم إلى'],
+    matchStarted:  ['Match already started — the admin approves you before you play.',
+                    'بدأت المباراة بالفعل — يوافق المشرف عليك قبل أن تلعب.'],
+    matchOver:     ['This match is over, so there is nothing left to join.',
+                    'انتهت هذه المباراة، لذا لم يعد هناك ما يمكن الانضمام إليه.'],
+    players:       ['joined', 'لاعب انضم'],
+    minutes:       ['min', 'دقيقة'],
+    landingTitle:  ['Football, organised.', 'كرة القدم، منظّمة.'],
+    landingSub:    ['Create matches, pick teams, keep score and track every player stats.',
+                    'أنشئ المباريات، اختر الفرق، سجّل النتائج، وتابع إحصائيات كل لاعب.'],
+    haveCode:      ['Have a match code?', 'لديك رمز مباراة؟'],
+    codeHint:      ['e.g. AB12CD', 'مثال: AB12CD'],
+    find:          ['Find', 'ابحث'],
+    enterMatchCode:['Enter the match code.', 'أدخل رمز المباراة.'],
+    noMatchForCode:['No match found for that code.', 'لا توجد مباراة بهذا الرمز.'],
+    couldNotLookup:['Could not look up that code.', 'تعذّر البحث عن هذا الرمز.'],
+    getTheApp:     ['Get the app', 'احصل على التطبيق'],
+    openStore:     ['Download YNO', 'حمّل YNO'],
+    notOnStores:   ['The app is not published to the app stores yet - ask whoever invited you to send you the install file.',
+                    'لم يُنشر التطبيق على المتاجر بعد — اطلب ملف التثبيت ممّن دعاك.']
+  };
+
+  var lang = 0; // 0 = en, 1 = ar
+  function t(k) { return (T[k] || ['', ''])[lang]; }
+
+  function $(id) { return document.getElementById(id); }
+  function show(el) { el.classList.remove('hide'); }
+  function hide(el) { el.classList.add('hide'); }
+
+  // ---- language -----------------------------------------------------------
+  function applyLang() {
+    var ar = lang === 1;
+    document.documentElement.lang = ar ? 'ar' : 'en';
+    document.documentElement.dir = ar ? 'rtl' : 'ltr';
+    document.title = ar ? 'الانضمام إلى مباراة · YNO' : 'Join a match · YNO';
+    $('langBtn').textContent = ar ? 'English' : 'العربية';
+    var i, n = document.querySelectorAll('[data-t]');
+    for (i = 0; i < n.length; i++) n[i].textContent = t(n[i].getAttribute('data-t'));
+    n = document.querySelectorAll('[data-t-ph]');
+    for (i = 0; i < n.length; i++) n[i].placeholder = t(n[i].getAttribute('data-t-ph'));
+    if (STORE_URL) $('storeLink').textContent = t('openStore');
+    if (lastMatch) renderMatch(lastMatch.doc, lastMatch.code, lastMatch.side);
+  }
+
+  function setLang(l) {
+    lang = l;
+    try { localStorage.setItem('yno_lang', String(l)); } catch (e) {}
+    applyLang();
+  }
+
+  (function initLang() {
+    var saved = null;
+    try { saved = localStorage.getItem('yno_lang'); } catch (e) {}
+    if (saved === '0' || saved === '1') lang = Number(saved);
+    else if ((navigator.language || '').toLowerCase().indexOf('ar') === 0) lang = 1;
+  })();
+
+  $('langBtn').addEventListener('click', function () { setLang(lang === 1 ? 0 : 1); });
+
+  // ---- firestore (REST, unauthenticated) ----------------------------------
+  function val(f) {
+    if (!f) return null;
+    if ('stringValue'    in f) return f.stringValue;
+    if ('integerValue'   in f) return Number(f.integerValue);
+    if ('booleanValue'   in f) return f.booleanValue;
+    if ('timestampValue' in f) return f.timestampValue;
+    if ('nullValue'      in f) return null;
+    if ('arrayValue'     in f) return (f.arrayValue.values || []);
+    return null;
+  }
+
+  function queryByField(field, code) {
+    var url = 'https://firestore.googleapis.com/v1/projects/' + PROJECT +
+              '/databases/(default)/documents:runQuery?key=' + API_KEY;
+    var body = {
+      structuredQuery: {
+        from: [{ collectionId: 'matches' }],
+        where: { fieldFilter: {
+          field: { fieldPath: field }, op: 'EQUAL',
+          value: { stringValue: code } } },
+        limit: 1
+      }
+    };
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).then(function (rows) {
+      for (var i = 0; i < rows.length; i++) if (rows[i].document) return rows[i].document;
+      return null;
+    });
+  }
+
+  // Mirrors MatchRepository.findByCode: the shared code first, then each side's.
+  function findByCode(code) {
+    var fields = ['code', 'codeA', 'codeB'], i = 0;
+    function next() {
+      if (i >= fields.length) return Promise.resolve(null);
+      var f = fields[i++];
+      return queryByField(f, code).then(function (doc) { return doc || next(); });
+    }
+    return next();
+  }
+
+  // ---- rendering ----------------------------------------------------------
+  var lastMatch = null;
+
+  function renderMatch(doc, code, side) {
+    lastMatch = { doc: doc, code: code, side: side };
+    var f = doc.fields || {};
+    var status = val(f.status) || 'lobby';
+    var live = status === 'live', over = status === 'ended' || status === 'abandoned';
+
+    var pill = $('statusPill');
+    pill.className = 'pill' + (live ? ' live' : (over ? '' : ' lobby'));
+    $('statusText').textContent =
+      live ? t('live') : status === 'ended' ? t('ended')
+           : status === 'abandoned' ? t('abandoned') : t('lobbyOpen');
+
+    var name = val(f.name) || '';
+    if (name) { $('matchName').textContent = name; show($('matchName')); }
+    else hide($('matchName'));
+
+    $('teamA').textContent = val(f.teamAName) || 'Team A';
+    $('teamB').textContent = val(f.teamBName) || 'Team B';
+
+    var mid = $('vsOrScore');
+    if (live || over) {
+      mid.textContent = (val(f.scoreA) || 0) + ' - ' + (val(f.scoreB) || 0);
+      mid.className = 'score';
+    } else {
+      mid.textContent = t('vs');
+      mid.className = 'vs';
+    }
+
+    var chips = [], fmt = val(f.format), dur = val(f.durationMin);
+    var players = val(f.playerUids);
+    if (fmt) chips.push(fmt);
+    if (dur) chips.push(dur + ' ' + t('minutes'));
+    if (players && players.length) chips.push(players.length + ' ' + t('players'));
+    var loc = val(f.location);
+    if (loc) chips.push(loc);
+    var metaEl = $('meta');
+    metaEl.innerHTML = '';
+    chips.forEach(function (c) {
+      var d = document.createElement('div');
+      d.className = 'chip'; d.textContent = c;
+      metaEl.appendChild(d);
+    });
+
+    // Which team the code lands you on. Mirrors guest_join_screen, which shows
+    // this for every code and has no side picker: findByCode returns side B only
+    // for codeB, so everything else - the shared code included - joins side A.
+    var note = $('sideNote');
+    if (over) hide(note);
+    else {
+      note.innerHTML = '';
+      note.appendChild(document.createTextNode(t('youWillJoin') + ' '));
+      var b = document.createElement('b');
+      b.textContent = side === 'b' ? $('teamB').textContent : $('teamA').textContent;
+      note.appendChild(b);
+      show(note);
+    }
+
+    var warn = $('warnNote');
+    if (over)      { warn.textContent = t('matchOver');    show(warn); }
+    else if (live) { warn.textContent = t('matchStarted'); show(warn); }
+    else           { hide(warn); }
+
+    // Nothing to join once it is finished - drop the code and the steps.
+    if (over) { hide($('codeCard')); hide($('howCard')); }
+    else      { show($('codeCard')); show($('howCard')); $('codeOut').textContent = code; }
+
+    hide($('s-loading')); hide($('s-find')); show($('s-match'));
+  }
+
+  function showFind(errKey) {
+    lastMatch = null;
+    hide($('s-loading')); hide($('s-match')); show($('s-find'));
+    var e = $('findErr');
+    if (errKey) { e.textContent = t(errKey); show(e); } else { hide(e); }
+  }
+
+  // ---- copy ---------------------------------------------------------------
+  $('copyBtn').addEventListener('click', function () {
+    var code = $('codeOut').textContent, btn = $('copyBtn');
+    function done() {
+      btn.textContent = t('codeCopied'); btn.classList.add('done');
+      setTimeout(function () {
+        btn.textContent = t('copyCode'); btn.classList.remove('done');
+      }, 1800);
+    }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = code; ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(done, fallback);
+    } else fallback();
+  });
+
+  // ---- lookup flow --------------------------------------------------------
+  function lookup(raw, pushUrl) {
+    var code = String(raw || '').trim().toUpperCase();
+    if (!code) { showFind('enterMatchCode'); return; }
+
+    hide($('s-find')); hide($('s-match')); show($('s-loading'));
+
+    findByCode(code).then(function (doc) {
+      if (!doc) { showFind('noMatchForCode'); $('codeInput').value = code; return; }
+      var f = doc.fields || {};
+      var side = null;
+      if (val(f.codeB) === code) side = 'b';
+      else if (val(f.codeA) === code) side = 'a';
+      renderMatch(doc, code, side);
+      if (pushUrl && window.history && history.replaceState) {
+        history.replaceState(null, '', '/?code=' + encodeURIComponent(code));
+      }
+    }).catch(function () {
+      showFind('couldNotLookup'); $('codeInput').value = code;
+    });
+  }
+
+  $('codeForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    lookup($('codeInput').value, true);
+  });
+
+  // ---- boot ---------------------------------------------------------------
+  if (STORE_URL) {
+    var a = $('storeLink');
+    a.href = STORE_URL; a.textContent = t('openStore');
+    show(a); hide($('storeNote'));
+  }
+
+  applyLang();
+
+  // Accept ?code= / ?c=, and a bare trailing path segment (/ABC123) so a
+  // hand-typed or shortened link still resolves.
+  var params = new URLSearchParams(location.search);
+  var initial = params.get('code') || params.get('c');
+  if (!initial) {
+    var seg = location.pathname.replace(/^\/+|\/+$/g, '');
+    if (seg && seg.indexOf('/') === -1 && /^[A-Za-z0-9]{4,12}$/.test(seg)) initial = seg;
+  }
+
+  if (initial) lookup(initial, false);
+  else showFind(null);
+})();
+</script>
+</body>
+</html>
