@@ -41,6 +41,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen>
   // every participant is moved to the results exactly once; and if the match is
   // discarded out from under them, they're sent home once.
   bool _left = false;
+  bool _leaving = false;
   bool _hadMatch = false;
 
   String get _matchId => ModalRoute.of(context)!.settings.arguments as String;
@@ -82,6 +83,45 @@ class _LiveMatchScreenState extends State<LiveMatchScreen>
       Navigator.of(context)
           .pushReplacementNamed(Routes.postMatch, arguments: matchId);
     });
+  }
+
+  /// A player takes themselves out of a match that is already running.
+  ///
+  /// Host-only actions live behind the settings gear; this is the one thing a
+  /// non-creator can do to a live match, so it sits in the slot the gear would
+  /// occupy — which until now held an empty `SizedBox` purely to keep the
+  /// header balanced.
+  ///
+  /// Confirmed, because it cannot be undone from here: the rejoin path is a
+  /// code or an invite, not a back button. It is NOT danger-red — leaving
+  /// destroys nothing, and [MatchRepository.leaveLiveMatch] keeps the whole
+  /// roster entry so the host can go on assigning goals afterwards. Colouring
+  /// it red would say the opposite.
+  Future<void> _leaveLiveMatch(MatchModel match) async {
+    final uid = AuthRepository.instance.uid;
+    if (uid == null || _leaving) return;
+    final ok = await _confirm(
+      title: tr('live.leaveMatchQ'),
+      message: tr('live.leaveMatchBody'),
+      confirmLabel: tr('live.leaveMatch'),
+    );
+    if (!ok || !mounted) return;
+    setState(() => _leaving = true);
+    try {
+      await MatchRepository.instance.leaveLiveMatch(match.id, uid);
+      if (!mounted) return;
+      // `_left` first: dropping out of `playerUids` makes the match stream
+      // rebuild, and without this the ended/abandoned branch could fire a
+      // second navigation underneath this one.
+      _left = true;
+      Navigator.of(context).pushNamedAndRemoveUntil(Routes.home, (_) => false);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _leaving = false);
+      // The realistic failure is the host ending the match between opening the
+      // confirm and confirming it, which throws `not-live`.
+      showYnoToast(context, tr('live.leaveMatchFailed'));
+    }
   }
 
   /// A finished match whose level score the host has not settled yet.
@@ -425,7 +465,16 @@ class _LiveMatchScreenState extends State<LiveMatchScreen>
                   size: 20, color: AppColors.txt),
             )
           else
-            const SizedBox(width: 40),
+            // The player's own way out. This slot held an empty SizedBox, so a
+            // non-creator had no action here at all and no way off the screen —
+            // the live gate in app.dart puts them straight back.
+            IconChip(
+              onTap: _leaving ? null : () => _leaveLiveMatch(match),
+              size: 40,
+              radius: 12,
+              child: Icon(Icons.logout,
+                  size: 19, color: _leaving ? AppColors.dim2 : AppColors.dim),
+            ),
         ],
       ),
     );
@@ -965,6 +1014,27 @@ class _LiveMatchScreenState extends State<LiveMatchScreen>
               child: Text(p.name,
                   style: AppText.barlow(size: 16, weight: FontWeight.w700)),
             ),
+            // Someone who walked out is still pickable on purpose — the host
+            // has to be able to award a goal they scored before leaving. The
+            // badge is so that choice is made knowingly rather than looking
+            // like a stale roster.
+            if (p.hasLeft) ...[
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.line),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(tr('live.playerLeft').toUpperCase(),
+                    style: AppText.barlow(
+                        size: 9,
+                        weight: FontWeight.w800,
+                        color: AppColors.dim2,
+                        letterSpacing: 0.5)),
+              ),
+              const SizedBox(width: 8),
+            ],
             Text(match.teamName(p.team).toUpperCase(),
                 style: AppText.barlow(
                     size: 11, weight: FontWeight.w800, color: AppColors.dim)),

@@ -786,6 +786,54 @@ class MatchRepository {
     });
   }
 
+  /// A player walks out of a match that has already kicked off.
+  ///
+  /// Deliberately NOT [leaveMatch] with the status check relaxed, because the
+  /// two are opposite operations. Leaving a lobby deletes you: you were never
+  /// in the game, so nothing should remember you. Leaving a live match must
+  /// keep every trace of you — you played part of it, you may have scored, and
+  /// the host has to go on assigning goals and assists to you afterwards. So
+  /// the roster document stays exactly where it is and only gains a flag.
+  ///
+  /// 🔑 **Removing the uid from `playerUids` is the part that does the work.**
+  /// `watchMyLiveMatch` feeds the global gate in `app.dart`, which force-pushes
+  /// the live screen at anyone in that array; a leave that only navigated home
+  /// would be dragged straight back within a frame. The array is match
+  /// *participation*, the subcollection is the match *record* — this splits
+  /// them, which is exactly what the feature needs.
+  ///
+  /// Consequences that follow from that split, all intended:
+  /// * The match leaves their Matches list (`watchUserMatches` is the same
+  ///   array) and they are no longer redirected to the results at full time.
+  /// * Their stats still land: `applyMatchStats` walks the players
+  ///   subcollection, not `playerUids`, so career goals, assists and awards are
+  ///   credited as if they had stayed.
+  ///
+  /// The armband is surrendered on the way out — a side cannot be run by
+  /// somebody who has gone home — but unlike the lobby that frees nothing, so
+  /// it is only about who can manage the roster from here on.
+  ///
+  /// Throws `StateError('not-live')` if the match is not running (use
+  /// [leaveMatch] in the lobby) and `StateError('admin-cannot-leave')` for the
+  /// creator, who drives the match and must end or abandon it instead.
+  Future<void> leaveLiveMatch(String matchId, String uid) async {
+    final m = await getMatch(matchId);
+    if (m == null) return;
+    if (m.status != MatchStatus.live) throw StateError('not-live');
+    if (m.adminUid == uid) throw StateError('admin-cannot-leave');
+
+    await _players(matchId).doc(uid).update({
+      'left': true,
+      'leftAt': FieldValue.serverTimestamp(),
+      if (m.captainAUid == uid || m.captainBUid == uid) 'isCaptain': false,
+    });
+    await _matches.doc(matchId).update({
+      'playerUids': FieldValue.arrayRemove([uid]),
+      if (m.captainAUid == uid) 'captainAUid': null,
+      if (m.captainBUid == uid) 'captainBUid': null,
+    });
+  }
+
   Future<void> movePlayer(String matchId, MatchPlayer p, TeamSide to) =>
       _players(matchId).doc(p.uid).update({'team': to.id});
 

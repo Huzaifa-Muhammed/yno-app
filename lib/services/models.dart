@@ -760,6 +760,8 @@ class MatchPlayer {
     this.isAdmin = false,
     this.isGuest = false,
     this.isCaptain = false,
+    this.hasLeft = false,
+    this.leftAt,
   });
 
   final String uid;
@@ -774,6 +776,22 @@ class MatchPlayer {
   final bool isAdmin;
   final bool isGuest;
   final bool isCaptain;
+
+  /// They walked out of a match that had already kicked off.
+  ///
+  /// ⚠️ Deliberately a FLAG, not a deletion. Someone who leaves at half time
+  /// still scored whatever they scored, and the host has to be able to keep
+  /// assigning goals and assists to them afterwards — so the roster document
+  /// survives untouched and only `playerUids` on the match loses them, which is
+  /// what releases the global live-match gate in `app.dart`.
+  ///
+  /// Nothing filters on this: they stay on the team sheet, in the scorer
+  /// pickers and in `applyMatchStats`. It exists to be *shown* — a host
+  /// assigning a goal to someone who has gone home should be able to see that.
+  final bool hasLeft;
+
+  /// When they left. Null unless [hasLeft].
+  final DateTime? leftAt;
 
   String get initials => _initialsOf(name);
 
@@ -790,6 +808,10 @@ class MatchPlayer {
       isAdmin: (d['isAdmin'] ?? false) as bool,
       isGuest: (d['isGuest'] ?? false) as bool,
       isCaptain: (d['isCaptain'] ?? false) as bool,
+      // `left` rather than `hasLeft` on the document: `left` reads naturally in
+      // the console, and the Dart name only avoids colliding with the keyword.
+      hasLeft: (d['left'] ?? false) as bool,
+      leftAt: (d['leftAt'] as Timestamp?)?.toDate(),
     );
   }
 

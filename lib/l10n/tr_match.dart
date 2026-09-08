@@ -58,8 +58,23 @@ const Map<String, List<String>> trMatch = {
   // no tile grid, so this is its equivalent — and it has to carry the whole
   // explanation of the side, since B is never something you pick from a list.
   'match.teamBInfo': [
-    'The opponent. Leave it as Team B and add their players in the lobby, or challenge a real team with their code below.',
-    'الفريق الخصم. اتركه باسم Team B وأضف لاعبيه في الردهة، أو تحدَّ فريقًا حقيقيًا برمزه بالأسفل.'
+    'Start the match against Team B and add their players in the lobby, or challenge a real team with their code below.',
+    'ابدأ المباراة ضد Team B وأضف لاعبيه في الردهة، أو تحدَّ فريقًا حقيقيًا برمزه بالأسفل.'
+  ],
+  // Side B's heading, mirroring `useYourTeam` on side A so the two sides read
+  // as the same kind of choice rather than two unrelated controls.
+  'match.pickOpponent': ['Pick the opponent', 'اختر الفريق الخصم'],
+  'match.pickOpponentSub': [
+    'Play against an open Team B, or challenge a real team below.',
+    'العب ضد فريق Team B مفتوح، أو تحدَّ فريقًا حقيقيًا بالأسفل.'
+  ],
+  // Separates the two ways to fill side B. Lower case on purpose — it is a
+  // conjunction between two options, not a heading over them.
+  'match.or': ['or', 'أو'],
+  // Sits under side B's tiles once a challenged team is the selected one.
+  'match.challengeSelected': [
+    'Selected. Tap Team B to play an open side instead.',
+    'محدَّد. اضغط Team B للعب ضد فريق مفتوح بدلاً من ذلك.'
   ],
   // The button only *looks up* the team by its invite code and sets it as the
   // opponent — it sends nothing. The challenge notification fires in

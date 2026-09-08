@@ -102,6 +102,25 @@ const Map<String, List<String>> trLive = {
   ],
   'live.restart': ['Restart', 'إعادة'],
   'live.matchRestarted': ['Match restarted', 'أُعيدت المباراة'],
+  // A PLAYER leaving a match that is already running — not the host's
+  // `live.quitMatch` below, which closes the game down for everybody.
+  'live.leaveMatch': ['Leave Match', 'مغادرة المباراة'],
+  'live.leaveMatchQ': ['Leave this match?', 'مغادرة هذه المباراة؟'],
+  // Says the two things a player actually needs to know: they stop being held
+  // on this screen, and nothing they did is erased.
+  'live.leaveMatchBody': [
+    'You will stop following the match and can go back to the app. '
+        'Your goals, assists and stats stay on the scorecard, and the host can '
+        'still award them to you. You cannot rejoin from here.',
+    'ستتوقف عن متابعة المباراة ويمكنك العودة إلى التطبيق. '
+        'تبقى أهدافك وتمريراتك وإحصاءاتك في سجل المباراة، ويمكن للمضيف '
+        'منحها لك. لا يمكنك الانضمام مجددًا من هنا.'
+  ],
+  'live.leaveMatchFailed': [
+    'Could not leave the match',
+    'تعذّرت مغادرة المباراة'
+  ],
+  'live.playerLeft': ['Left', 'غادر'],
   'live.quitMatch': ['Quit Match', 'الخروج من المباراة'],
   'live.quitSub': [
     'Something went wrong — abandon or discard.',

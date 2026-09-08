@@ -201,6 +201,51 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
     });
   }
 
+  /// The looked-up team, but ONLY while it is the side actually selected.
+  ///
+  /// ⚠️ `_challenged` and `_teamBId` mean different things now and this getter
+  /// is what keeps them apart. `_challenged` is a team that has been *found* by
+  /// its code — a candidate, drawn as a tile beside the Team B tile so the two
+  /// can be compared and picked between. `_teamBId` is which of those tiles is
+  /// *chosen*. Deselecting leaves the candidate on screen so it can be chosen
+  /// again without re-typing the code.
+  ///
+  /// Everything that acts on a challenge — notifying the other team, linking
+  /// side B — must read this and never `_challenged`, or deselecting a team
+  /// would still fire a challenge at it on save.
+  TeamModel? get _activeChallenge =>
+      _challenged != null && _teamBId == _challenged!.id ? _challenged : null;
+
+  /// Select a looked-up opponent, or deselect it by tapping it again.
+  ///
+  /// Mirrors [_pickTeam] on side A, including the tap-to-unlink. The candidate
+  /// tile survives a deselect — see [_activeChallenge].
+  void _pickOpponent(TeamModel team) {
+    if (_teamBId == team.id) {
+      _unlinkTeam(TeamSide.b);
+      return;
+    }
+    setState(() {
+      _teamBId = team.id;
+      _teamBName = team.name;
+    });
+  }
+
+  /// Forget the looked-up opponent entirely, tile and all.
+  ///
+  /// Separate from [_unlinkTeam], which only deselects. Reachable from the × on
+  /// the candidate tile — without it a team fetched by mistake would sit there
+  /// permanently, since nothing else clears the candidate.
+  void _clearChallenge() {
+    setState(() {
+      if (_teamBId == _challenged?.id) {
+        _teamBId = null;
+        _teamBName = _kDefaultTeamB;
+      }
+      _challenged = null;
+    });
+  }
+
   /// Drop the link to a saved/challenged team and return the side to its
   /// default name.
   ///
@@ -218,7 +263,9 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
       } else {
         _teamBId = null;
         _teamBName = _kDefaultTeamB;
-        _challenged = null;
+        // `_challenged` deliberately SURVIVES: it is the candidate tile, and
+        // dropping it here would mean re-typing the code to change your mind.
+        // `_clearChallenge` is the one that forgets it.
       }
     });
   }
@@ -323,7 +370,9 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
     // captain is the primary (drives the accepter→captainB link); the owner
     // stands in when no distinct captain is assigned so a team is never
     // unreachable. Recipients (deduped) are who we notify + who may respond.
-    final challenged = _challenged;
+    // `_activeChallenge`, never `_challenged` — a looked-up team that is not the
+    // selected side must not be notified. See the getter.
+    final challenged = _activeChallenge;
     final challengeCaptainUid = challenged == null
         ? null
         : (challenged.captainUid ?? challenged.ownerUid);
@@ -623,10 +672,11 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                     size: 18, weight: FontWeight.w800, height: 1.1),
               ),
             ),
-            // Side A's explanation sits on the "Team A" tile in the grid
-            // below, next to the choice it describes. Side B has no grid, so
-            // its info affordance belongs here against the name.
-            if (side == TeamSide.b)
+            // Both sides' explanations now sit on their own default tile in
+            // the grid below, next to the choice they describe. Side B's used
+            // to hang off the name here because side B had no grid; it does
+            // now, so the two sides are read the same way.
+            if (side == TeamSide.b && _editing)
               _InfoTip(message: tr('match.teamBInfo'), iconSize: 17),
           ],
         ),
@@ -669,57 +719,158 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
             child: _ownTeamBlock(selId),
           ),
         ] else ...[
-          const SizedBox(height: 12),
-          _challengeBlock(),
+          const SizedBox(height: 10),
+          // Indented to the same 38px as side A's grid, so the two sides line
+          // up under their badges instead of one being flush and one inset.
+          Padding(
+            padding: const EdgeInsets.only(left: 38),
+            child: _opponentBlock(),
+          ),
         ],
       ],
     );
   }
 
-  // ---- Challenge an opponent team by its invite code ------------------------
-
-  Widget _challengeBlock() {
-    final team = _challenged;
-    if (team != null) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-        decoration: BoxDecoration(
-          color: AppColors.primaryGlow(0.08),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.primary, width: 1.5),
-        ),
-        child: Row(
+  /// Side B's picker: the mirror of [_ownTeamBlock].
+  ///
+  /// Side B used to be a name and a code field, which read as a different kind
+  /// of thing from side A's grid of team tiles — the client's report was that
+  /// it was not obvious both sides were teams at all. It is now the same
+  /// control: a row of tiles you choose between, where the choices are the open
+  /// "Team B" and whatever team you have looked up.
+  ///
+  /// The lookup sits *below* the tiles behind an "or", so the two ways to fill
+  /// this side read as alternatives rather than as a form you must complete.
+  Widget _opponentBlock() {
+    final candidate = _challenged;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(tr('match.pickOpponent'),
+            style: AppText.barlow(
+                size: 12, weight: FontWeight.w700, color: AppColors.dim)),
+        const SizedBox(height: 3),
+        Text(tr('match.pickOpponentSub'),
+            style: AppText.barlow(
+                size: 11.5, color: AppColors.dim2, height: 1.35)),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 10,
+          runSpacing: 12,
           children: [
-            Text(team.presetBadge?.isNotEmpty == true ? team.presetBadge! : '🛡️',
-                style: const TextStyle(fontSize: 20)),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            // The open opponent, and the default — selected whenever no team is
+            // linked, so exactly one tile is always lit, as on side A.
+            _teamTile(
+              selected: _teamBId == null,
+              label: _kDefaultTeamB,
+              onTap: () => _unlinkTeam(TeamSide.b),
+              child: Stack(
                 children: [
-                  Text(team.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.condensed(
-                          size: 18, weight: FontWeight.w800, height: 1.1)),
-                  const SizedBox(height: 3),
-                  Text(tr('match.challengeWillNotify'),
-                      style: AppText.barlow(size: 11, color: AppColors.dim)),
+                  Container(
+                    width: _kTeamTile,
+                    height: _kTeamTile,
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                          color: _teamBId == null
+                              ? AppColors.primary
+                              : AppColors.line),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(TeamSide.b.id,
+                        style: AppText.condensed(
+                            size: _kTeamTile * 0.44, weight: FontWeight.w800)),
+                  ),
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: _InfoTip(message: tr('match.teamBInfo')),
+                  ),
                 ],
               ),
             ),
-            GestureDetector(
-              onTap: () => _unlinkTeam(TeamSide.b),
-              behavior: HitTestBehavior.opaque,
-              child: const Padding(
-                padding: EdgeInsets.only(left: 8),
-                child: Icon(Icons.close, size: 18, color: AppColors.dim),
+            // The looked-up team, once there is one. It carries a × because it
+            // is transient state — unlike side A's saved teams, nothing else
+            // would ever remove it from the grid.
+            if (candidate != null)
+              _teamTile(
+                selected: _teamBId == candidate.id,
+                label: candidate.name,
+                onTap: () => _pickOpponent(candidate),
+                child: Stack(
+                  children: [
+                    TeamBadge(
+                      badgeUrl: candidate.badgeUrl,
+                      presetBadge: candidate.presetBadge,
+                      name: candidate.name,
+                      size: _kTeamTile,
+                      radius: 18,
+                      border: _teamBId == candidate.id
+                          ? AppColors.primary
+                          : AppColors.line,
+                    ),
+                    Positioned(
+                      top: 2,
+                      right: 2,
+                      child: GestureDetector(
+                        onTap: _clearChallenge,
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: AppColors.bg,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.line),
+                          ),
+                          child: const Icon(Icons.close,
+                              size: 12, color: AppColors.dim),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
           ],
         ),
+        // What picking the challenged tile actually commits you to. Only shown
+        // when it is selected, because that is when it becomes true.
+        if (_activeChallenge != null) ...[
+          const SizedBox(height: 9),
+          Text(tr('match.challengeWillNotify'),
+              style: AppText.barlow(size: 11.5, color: AppColors.dim)),
+          const SizedBox(height: 2),
+          Text(tr('match.challengeSelected'),
+              style: AppText.barlow(size: 11, color: AppColors.dim2)),
+        ],
+        const SizedBox(height: 14),
+        _orDivider(),
+        const SizedBox(height: 14),
+        _challengeBlock(),
+      ],
+    );
+  }
+
+  /// A hairline with "or" set into it, between side B's tiles and the lookup.
+  Widget _orDivider() => Row(
+        children: [
+          const Expanded(child: Divider(color: AppColors.line, height: 1)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(tr('match.or').toUpperCase(),
+                style: AppText.barlow(
+                    size: 11,
+                    weight: FontWeight.w800,
+                    color: AppColors.dim2,
+                    letterSpacing: 1)),
+          ),
+          const Expanded(child: Divider(color: AppColors.line, height: 1)),
+        ],
       );
-    }
+
+  // ---- Challenge an opponent team by its invite code ------------------------
+
+  Widget _challengeBlock() {
     // Presented as an explicit alternative to typing a name: a bordered block
     // with a heading and a plain-English explanation of what a team code is
     // and what happens when you use one. It was a 12px dim label above a field
