@@ -2,7 +2,7 @@
     <!-- Contact-based friend discovery (Community → Contacts). -->
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
     <application
-        android:label="ynoapp"
+        android:label="YNO"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

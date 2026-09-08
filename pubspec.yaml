@@ -85,6 +85,14 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  # Generates the Android launcher icons (all densities + the adaptive icon)
+  # from assets/icon/. Dev-only: it is a build-time generator, nothing ships.
+  flutter_launcher_icons: ^0.14.1
+
+  # Used only by tool/make_icons.dart, which prepares the icon sources from
+  # the client logo. Declared explicitly rather than leaned on transitively.
+  image: ^4.3.0
+
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
@@ -135,3 +143,22 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Launcher icon generation — `dart run flutter_launcher_icons`.
+#
+# Sources are the three PNGs produced by `tool/make_icons.dart` from the
+# client's logo, NOT the raw JPEG: the adaptive foreground needs transparency
+# and its own padding for Android's mask. Regenerate both when the logo changes.
+#
+# Android only on purpose. iOS/macOS/web icons are still the Flutter template —
+# nothing is shipping to those stores, and touching them would be noise.
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/yno_icon.png"
+  # White to match the mark's own field. The app itself is dark + volt green, so
+  # this is the one place the brand is light-on-dark inverted; it is the logo as
+  # supplied, and white keeps the navy legible on any wallpaper.
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/yno_icon_fg.png"
+  min_sdk_android: 24
