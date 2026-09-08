@@ -1,8 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/feedback_repository.dart';
 import '../services/models.dart';
+import '../services/rewards_config.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text.dart';
 import '../widgets/common.dart';
@@ -32,6 +34,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
   String _matchFilter = 'all';
   /// 'all' | 'open' | 'bug' | 'suggestion' — applied in memory, see _feedbackTab.
   String _feedbackFilter = 'all';
+  /// 'all' | 'referrers' | 'referred' | 'auto' — applied in memory.
+  String _userFilter = 'all';
+
+  // Rewards editor. `_rewardsDirty` guards against the stream echo of our own
+  // save re-seeding the boxes while the admin is still typing in them.
+  final _refPointsCtl = TextEditingController();
+  final _communityPointsCtl = TextEditingController();
+  final _motmPointsCtl = TextEditingController();
+  bool _rewardsDirty = false;
+  bool _savingRewards = false;
 
   @override
   void initState() {
@@ -45,6 +57,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
   void dispose() {
     _search.dispose();
     _typeConfirm.dispose();
+    _refPointsCtl.dispose();
+    _communityPointsCtl.dispose();
+    _motmPointsCtl.dispose();
     super.dispose();
   }
 
@@ -114,7 +129,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         backgroundColor: AppColors.bg,
         appBar: AppBar(
@@ -155,6 +170,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               Tab(text: 'TEAMS'),
               Tab(text: 'MATCHES'),
               Tab(text: 'FEEDBACK'),
+              Tab(text: 'REWARDS'),
               Tab(text: 'DANGER ZONE'),
             ],
           ),
@@ -170,6 +186,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   _teamsTab(),
                   _matchesTab(),
                   _feedbackTab(),
+                  _rewardsTab(),
                   _dangerTab(),
                 ],
               ),
@@ -239,44 +256,79 @@ class _AdminDashboardState extends State<AdminDashboard> {
   // ---- Users ------------------------------------------------------------
 
   Widget _usersTab() {
-    return Column(
-      children: [
-        _searchField('Search users by name, @username or email…'),
-        Expanded(
-          child: StreamBuilder<List<AppUser>>(
-            stream: _repo.watchUsers(),
-            builder: (context, snap) {
-              if (snap.hasError) {
-                return _errorState('Could not load users.\n${snap.error}');
-              }
-              if (!snap.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              var users = snap.data!;
-              if (_query.isNotEmpty) {
-                users = users
-                    .where((u) =>
-                        u.name.toLowerCase().contains(_query) ||
-                        u.username.toLowerCase().contains(_query) ||
-                        u.email.toLowerCase().contains(_query))
-                    .toList();
-              }
-              users.sort((a, b) =>
-                  a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-              if (users.isEmpty) return _emptyState('No users.');
-              return ListView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-                itemCount: users.length,
-                itemBuilder: (context, i) => _userCard(users[i]),
-              );
-            },
-          ),
-        ),
-      ],
+    return StreamBuilder<List<AppUser>>(
+      stream: _repo.watchUsers(),
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return _errorState('Could not load users.\n${snap.error}');
+        }
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        // The UNFILTERED list, kept separate because the referral figures must
+        // count every account — filtering to "Referrers" and then counting
+        // would only ever count the rows still on screen.
+        final all = snap.data!;
+        final counts = _referralCounts(all);
+
+        var users = all.where((u) {
+          switch (_userFilter) {
+            case 'referrers':
+              return (counts[u.uid] ?? 0) > 0;
+            case 'referred':
+              return u.referredBy != null && u.referredBy!.isNotEmpty;
+            case 'auto':
+              return u.autoCreated;
+            default:
+              return true;
+          }
+        }).toList();
+
+        if (_query.isNotEmpty) {
+          users = users
+              .where((u) =>
+                  u.name.toLowerCase().contains(_query) ||
+                  u.username.toLowerCase().contains(_query) ||
+                  u.email.toLowerCase().contains(_query) ||
+                  // Searching the referral code answers "who owns AB12CD?"
+                  // directly, which is the usual way that question arrives.
+                  u.referralCode.toLowerCase().contains(_query))
+              .toList();
+        }
+
+        // Referrers first when that filter is on, so the biggest are on top;
+        // alphabetical otherwise, which is what you want when hunting a name.
+        if (_userFilter == 'referrers') {
+          users.sort((a, b) =>
+              (counts[b.uid] ?? 0).compareTo(counts[a.uid] ?? 0));
+        } else {
+          users.sort(
+              (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        }
+
+        return Column(
+          children: [
+            _searchField(
+                'Search users by name, @username, email or referral code…'),
+            _userFilterRow(all),
+            Expanded(
+              child: users.isEmpty
+                  ? _emptyState('No users match that.')
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                      itemCount: users.length,
+                      itemBuilder: (context, i) =>
+                          _userCard(users[i], counts, all),
+                    ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  Widget _userCard(AppUser u) {
+  Widget _userCard(AppUser u, Map<String, int> counts, List<AppUser> all) {
+    final referred = counts[u.uid] ?? 0;
     return _card(
       leading: InitialsAvatar(
           initials: u.initials, size: 42, fontSize: 15, photoUrl: u.photoUrl),
@@ -286,11 +338,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
         if (u.email.isNotEmpty) u.email,
         if (u.phone != null && u.phone!.isNotEmpty) u.phone!,
         '${u.points} pts · ${u.matchesPlayed} matches',
+        // The referral line, always shown so the code is findable even at zero.
+        'code ${u.referralCode.isEmpty ? "—" : u.referralCode} · '
+            '$referred referred'
+            '${u.referredBy != null && u.referredBy!.isNotEmpty ? " · was referred" : ""}',
       ],
       badges: [
+        if (referred > 0) '$referred referrals',
         if (u.autoCreated) 'auto-created',
         if (u.deactivated) 'deactivated',
       ],
+      // Tapping the referral count opens the list of who actually signed up.
+      onTapBody: referred > 0 ? () => _showReferralsFor(u, all) : null,
       onDelete: () async {
         final ok = await showConfirm(
           context,
@@ -298,7 +357,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           message:
               'Delete ${u.name.isEmpty ? u.email : u.name} and all their data? '
               'This removes their profile and subcollections. Their login (if any) '
-              'is not removed but will no longer resolve to a profile.',
+              'remains — delete it in the Firebase console.',
           confirmLabel: 'Delete',
           danger: true,
         );
@@ -314,6 +373,348 @@ class _AdminDashboardState extends State<AdminDashboard> {
         }
       },
     );
+  }
+
+  // ---- Referral reporting -------------------------------------------------
+
+  /// How many accounts each user has referred, keyed by referrer uid.
+  ///
+  /// Counted in memory from the users stream rather than with a per-user
+  /// `where('referredBy', ...)` query. `watchUsers()` already has every
+  /// document, so grouping them is free — the query version would fire one read
+  /// per row on every rebuild, which on a few thousand users is a bill and a
+  /// rate limit rather than a feature.
+  Map<String, int> _referralCounts(List<AppUser> all) {
+    final counts = <String, int>{};
+    for (final u in all) {
+      final by = u.referredBy;
+      if (by != null && by.isNotEmpty) {
+        counts[by] = (counts[by] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  /// Everyone who signed up with [referrer]'s code.
+  List<AppUser> _referredBy(List<AppUser> all, String referrerUid) =>
+      all.where((u) => u.referredBy == referrerUid).toList()
+        ..sort((a, b) => (b.createdAt ?? DateTime(0))
+            .compareTo(a.createdAt ?? DateTime(0)));
+
+  Widget _userFilterRow(List<AppUser> all) {
+    final counts = _referralCounts(all);
+    Widget chip(String label, String value) {
+      final selected = _userFilter == value;
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: GestureDetector(
+          onTap: () => setState(() => _userFilter = value),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.primary : AppColors.surface,
+              border: Border.all(
+                  color: selected ? AppColors.primary : AppColors.line),
+              borderRadius: BorderRadius.circular(100),
+            ),
+            child: Text(label,
+                style: AppText.barlow(
+                    size: 12,
+                    weight: FontWeight.w700,
+                    color: selected ? AppColors.ink : AppColors.dim)),
+          ),
+        ),
+      );
+    }
+
+    final referrers = counts.length;
+    final referred = counts.values.fold<int>(0, (a, b) => a + b);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              chip('All', 'all'),
+              chip('Referrers', 'referrers'),
+              chip('Was referred', 'referred'),
+              chip('Auto-created', 'auto'),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+              '$referrers ${referrers == 1 ? "user has" : "users have"} '
+              'referred $referred ${referred == 1 ? "signup" : "signups"} in total',
+              style: AppText.barlow(size: 12, color: AppColors.dim2)),
+        ],
+      ),
+    );
+  }
+
+  /// The people a user brought in. Opened from their card.
+  Future<void> _showReferralsFor(AppUser u, List<AppUser> all) async {
+    final list = _referredBy(all, u.uid);
+    await showDialog<void>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(
+            'Referred by ${u.name.isEmpty ? u.email : u.name}',
+            style: AppText.barlow(size: 17, weight: FontWeight.w800)),
+        content: SizedBox(
+          width: 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                  'Code ${u.referralCode.isEmpty ? "—" : u.referralCode} · '
+                  '${list.length} ${list.length == 1 ? "signup" : "signups"} · '
+                  'worth ${list.length * RewardsRepository.current.referralPoints} pts to them',
+                  style: AppText.barlow(size: 12.5, color: AppColors.dim)),
+              const SizedBox(height: 12),
+              if (list.isEmpty)
+                Text('Nobody has used this code yet.',
+                    style: AppText.barlow(size: 14, color: AppColors.dim2))
+              else
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: list.length,
+                    itemBuilder: (_, i) {
+                      final r = list[i];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            InitialsAvatar(
+                                initials: r.initials,
+                                size: 30,
+                                fontSize: 11,
+                                photoUrl: r.photoUrl),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                      r.name.isEmpty ? '(no name)' : r.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: AppText.barlow(
+                                          size: 14,
+                                          weight: FontWeight.w700)),
+                                  Text(
+                                      '@${r.handle}'
+                                      '${r.createdAt != null ? " · joined ${_fmtDate(r.createdAt!)}" : ""}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: AppText.barlow(
+                                          size: 11.5,
+                                          color: AppColors.dim2)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dCtx),
+            child: Text('Close',
+                style: AppText.barlow(
+                    weight: FontWeight.w800, color: AppColors.txt)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---- Rewards (point values, live-edited) --------------------------------
+
+  /// Editor for `config/rewards`.
+  ///
+  /// These three numbers used to be `const` in the Dart source, so changing what
+  /// a referral was worth meant shipping a new build to every phone. They are a
+  /// Firestore document now: saving here reaches running apps through
+  /// `RewardsRepository.listen()` without a release.
+  ///
+  /// ⚠️ Changes are **not retroactive**. Points already awarded were written to
+  /// `users/{uid}.points` with whatever the value was at the time; editing these
+  /// changes future awards only. That is deliberate — recomputing history would
+  /// mean replaying every match and referral ever.
+  Widget _rewardsTab() {
+    return StreamBuilder<RewardsConfig>(
+      stream: RewardsRepository.instance.watch(),
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return _errorState('Could not load rewards.\n${snap.error}');
+        }
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final cfg = snap.data!;
+        // Seed the editors from the document the first time it arrives, and
+        // whenever it changes underneath us — but never while the admin is
+        // mid-edit, or their typing would be wiped by the echo of their own
+        // save coming back down the stream.
+        if (!_rewardsDirty) _seedRewardFields(cfg);
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+          children: [
+            Text('POINT VALUES',
+                style: AppText.barlow(
+                    size: 12,
+                    weight: FontWeight.w800,
+                    color: AppColors.dim2,
+                    letterSpacing: 1.2)),
+            const SizedBox(height: 6),
+            Text(
+                'Applies to every app immediately — no new build needed. '
+                'Not retroactive: points already awarded keep the value they '
+                'were given at the time.',
+                style: AppText.barlow(
+                    size: 13, color: AppColors.dim, height: 1.45)),
+            const SizedBox(height: 20),
+            _rewardField(
+              controller: _refPointsCtl,
+              label: 'Referral bonus',
+              help: 'Awarded to BOTH sides — the referrer and the new account — '
+                  'when someone signs up with a referral code.',
+            ),
+            _rewardField(
+              controller: _communityPointsCtl,
+              label: 'Community Player',
+              help: 'Awarded to the winner of the post-match community vote.',
+            ),
+            _rewardField(
+              controller: _motmPointsCtl,
+              label: 'Man of the Match',
+              help: 'Awarded to the algorithm MOTM (most goals, then assists).',
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _rewardsDirty && !_savingRewards
+                        ? () => _saveRewards(cfg)
+                        : null,
+                    child: Text(_savingRewards ? 'Saving…' : 'Save changes'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                TextButton(
+                  onPressed: _rewardsDirty
+                      ? () => setState(() {
+                            _rewardsDirty = false;
+                            _seedRewardFields(cfg);
+                          })
+                      : null,
+                  child: Text('Discard',
+                      style: AppText.barlow(
+                          weight: FontWeight.w700, color: AppColors.dim)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 26),
+            Text('CURRENTLY LIVE',
+                style: AppText.barlow(
+                    size: 12,
+                    weight: FontWeight.w800,
+                    color: AppColors.dim2,
+                    letterSpacing: 1.2)),
+            const SizedBox(height: 8),
+            Text(
+                'Referral ${cfg.referralPoints} · '
+                'Community ${cfg.communityPlayerPoints} · '
+                'MOTM ${cfg.manOfMatchPoints}',
+                style: AppText.barlow(size: 14)),
+          ],
+        );
+      },
+    );
+  }
+
+  void _seedRewardFields(RewardsConfig cfg) {
+    _refPointsCtl.text = '${cfg.referralPoints}';
+    _communityPointsCtl.text = '${cfg.communityPlayerPoints}';
+    _motmPointsCtl.text = '${cfg.manOfMatchPoints}';
+  }
+
+  Widget _rewardField({
+    required TextEditingController controller,
+    required String label,
+    required String help,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: AppText.barlow(size: 15, weight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          Text(help,
+              style: AppText.barlow(
+                  size: 12, color: AppColors.dim2, height: 1.4)),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: 160,
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              // Digits only: the field writes an int, and a stray minus or dot
+              // would be silently coerced on save.
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              style: AppText.barlow(size: 16, weight: FontWeight.w700),
+              decoration: const InputDecoration(
+                isDense: true,
+                suffixText: 'pts',
+              ),
+              onChanged: (_) {
+                if (!_rewardsDirty) setState(() => _rewardsDirty = true);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveRewards(RewardsConfig currentCfg) async {
+    // Fall back to the live value per field rather than to zero: an emptied box
+    // means "leave this one alone", not "this reward is now worth nothing".
+    int parse(TextEditingController c, int fallback) =>
+        int.tryParse(c.text.trim()) ?? fallback;
+    final next = RewardsConfig(
+      referralPoints: parse(_refPointsCtl, currentCfg.referralPoints),
+      communityPlayerPoints:
+          parse(_communityPointsCtl, currentCfg.communityPlayerPoints),
+      manOfMatchPoints: parse(_motmPointsCtl, currentCfg.manOfMatchPoints),
+    );
+    setState(() => _savingRewards = true);
+    try {
+      await RewardsRepository.instance.save(next);
+      if (!mounted) return;
+      setState(() {
+        _savingRewards = false;
+        _rewardsDirty = false;
+      });
+      _toast('Rewards updated.');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _savingRewards = false);
+      _toast('Save failed: $e');
+    }
   }
 
   // ---- Teams ------------------------------------------------------------
@@ -926,6 +1327,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     required List<String> subtitleLines,
     required List<String> badges,
     required VoidCallback onDelete,
+    /// Optional: makes the card's text area tappable. Used by the users tab to
+    /// open a referrer's list of signups. The delete button keeps its own tap
+    /// target, so this can never fire a delete by accident.
+    VoidCallback? onTapBody,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -941,7 +1346,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
           leading,
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
+            child: GestureDetector(
+              onTap: onTapBody,
+              behavior: HitTestBehavior.opaque,
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
@@ -974,7 +1382,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppText.barlow(size: 12, color: AppColors.dim))),
-              ],
+                ],
+              ),
             ),
           ),
           IconButton(

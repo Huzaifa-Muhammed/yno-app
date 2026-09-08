@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/rewards_config.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -371,7 +372,7 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                            '${tr('live.winner')} · +$kCommunityPlayerPoints ${tr('live.pts')}',
+                            '${tr('live.winner')} · +${RewardsRepository.current.communityPlayerPoints} ${tr('live.pts')}',
                             style: AppText.label()),
                         const SizedBox(height: 2),
                         Text(winner.name,
@@ -654,8 +655,8 @@ class _PostMatchScreenState extends State<PostMatchScreen> {
     }
     final isMotm = mine.uid == match.motmAUid;
     final isCommunity = mine.uid == match.communityPlayerUid;
-    final points = (isMotm ? kManOfMatchPoints : 0) +
-        (isCommunity ? kCommunityPlayerPoints : 0);
+    final points = (isMotm ? RewardsRepository.current.manOfMatchPoints : 0) +
+        (isCommunity ? RewardsRepository.current.communityPlayerPoints : 0);
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: AppColors.line),

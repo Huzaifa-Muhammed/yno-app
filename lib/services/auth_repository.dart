@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'rewards_config.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -44,7 +45,6 @@ String authErrorMessage(FirebaseAuthException e) {
 /// switching the claim flow to `signInWithCustomToken` (the OTP service already
 /// returns the token) and randomising this value.
 const kAutoAccountPassword = '123456';
-const kReferralPoints = 10;
 
 /// Result of a Google sign-in: the credential + whether the profile is new
 /// (new Google users still need the onboarding profile screens).
@@ -77,19 +77,19 @@ class AuthRepository {
     if (q.docs.isEmpty || q.docs.first.id == newUid) return null;
     final referrerUid = q.docs.first.id;
     await _users.doc(referrerUid).update({
-      'points': FieldValue.increment(kReferralPoints),
+      'points': FieldValue.increment(RewardsRepository.current.referralPoints),
     });
     await _users.doc(newUid).update({
-      'points': FieldValue.increment(kReferralPoints),
+      'points': FieldValue.increment(RewardsRepository.current.referralPoints),
     });
     final notifs = NotificationRepository.instance;
     await notifs.emit(referrerUid,
         title: 'Referral bonus 🎁',
-        body: '$newName joined with your code! +$kReferralPoints points.',
+        body: '$newName joined with your code! +${RewardsRepository.current.referralPoints} points.',
         category: NotifCategory.points);
     await notifs.add(newUid,
         title: 'Welcome bonus 🎁',
-        body: 'You earned +$kReferralPoints points for using a referral code.',
+        body: 'You earned +${RewardsRepository.current.referralPoints} points for using a referral code.',
         category: NotifCategory.points);
     return referrerUid;
   }

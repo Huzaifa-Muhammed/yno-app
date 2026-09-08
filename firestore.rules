@@ -129,6 +129,22 @@ service cloud.firestore {
       allow write: if signedIn();
     }
 
+    // App-wide configuration the super-admin panel edits — currently only
+    // `config/rewards`, the point values for referrals, MOTM and the community
+    // award (they were compiled-in constants until 2026-09-07).
+    //
+    // World-readable on purpose: every client shows these numbers ("+10 pts")
+    // and reads them before sign-in on the welcome/referral screens. There is
+    // nothing private here.
+    //
+    // ⚠️ Write is super-admin ONLY. These values decide what points are worth,
+    // and `users` is writable by any signed-in user — so a client that could
+    // write here could set a referral to 10,000 points and then award itself.
+    match /config/{doc} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
     // Bug reports and suggestions from the app's side drawer.
     //
     // ⚠️ NOT world-readable, unlike almost everything else here. A report

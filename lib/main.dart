@@ -10,6 +10,7 @@ import 'firebase_options.dart';
 import 'services/app_version.dart';
 import 'services/push_service.dart';
 import 'services/referral_link_service.dart';
+import 'services/rewards_config.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -20,6 +21,13 @@ Future<void> main() async {
   SystemChrome.setSystemUIOverlayStyle(AppTheme.overlay);
   // Read the real build version once so Settings/About never hard-code it.
   await AppVersion.load();
+  // Point values (referral / MOTM / community) are set by the admin panel, not
+  // compiled in. Awaited before the first frame so a "+10 pts" label never
+  // paints a stale number, then kept live so an admin's edit reaches running
+  // apps without a restart. Both calls swallow their own failures — the app
+  // falls back to the defaults in `RewardsConfig` rather than refusing to boot.
+  await RewardsRepository.instance.load();
+  RewardsRepository.instance.listen();
 
   // The web build is the super-admin control panel, not the player app.
   if (kIsWeb) {

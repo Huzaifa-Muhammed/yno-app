@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'rewards_config.dart';
 
 import 'auth_repository.dart';
 import 'codes.dart';
@@ -8,9 +9,6 @@ import 'notification_repository.dart';
 import 'team_repository.dart';
 import 'user_repository.dart';
 
-/// App points awarded for the two post-match honours.
-const kCommunityPlayerPoints = 20;
-const kManOfMatchPoints = 30;
 
 /// A DRAFT match (created but never started — still in the lobby) is
 /// auto-deleted this long after creation.
@@ -1286,7 +1284,7 @@ class MatchRepository {
       'editableUntil': Timestamp.fromDate(now.add(const Duration(hours: 24))),
     });
     if (motm != null && hasAccount(motm)) {
-      await users.addPoints(motm.uid, kManOfMatchPoints);
+      await users.addPoints(motm.uid, RewardsRepository.current.manOfMatchPoints);
     }
 
     // Career + guest stats.
@@ -1378,7 +1376,7 @@ class MatchRepository {
     if (motm != null && hasAccount(motm)) {
       await notifs.emit(motm.uid,
           title: 'Man of the Match ⭐',
-          body: 'You were Man of the Match! +$kManOfMatchPoints points.',
+          body: 'You were Man of the Match! +${RewardsRepository.current.manOfMatchPoints} points.',
           category: NotifCategory.award,
           route: '/post-match',
           arg: matchId);
@@ -1429,7 +1427,7 @@ class MatchRepository {
     // them.
     final withAccounts = await _playersWithAccounts(players);
     if (wp != null && earnsCareerStats(wp, withAccounts)) {
-      await UserRepository.instance.addPoints(winner, kCommunityPlayerPoints);
+      await UserRepository.instance.addPoints(winner, RewardsRepository.current.communityPlayerPoints);
       await _db.collection('users').doc(winner).update({
         'communityCount': FieldValue.increment(1),
       });
@@ -1441,7 +1439,7 @@ class MatchRepository {
       await NotificationRepository.instance.emit(winner,
           title: 'Community Award 🤝',
           body:
-              'Your teammates voted you best performer! +$kCommunityPlayerPoints points.',
+              'Your teammates voted you best performer! +${RewardsRepository.current.communityPlayerPoints} points.',
           category: NotifCategory.award,
           route: '/post-match',
           arg: matchId);

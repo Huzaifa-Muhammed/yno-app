@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/rewards_config.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
@@ -132,7 +133,7 @@ class _ReferralScreenState extends State<ReferralScreen> {
                                   color: AppColors.txt)),
                           TextSpan(text: tr('misc.rewardEachEarn')),
                           TextSpan(
-                              text: '+$kReferralPoints ${tr('misc.points')}',
+                              text: '+${RewardsRepository.current.referralPoints} ${tr('misc.points')}',
                               style: AppText.barlow(
                                   size: 14,
                                   weight: FontWeight.w800,
@@ -209,7 +210,7 @@ class _ReferralScreenState extends State<ReferralScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: StatTile(
-                            value: '${_referrals * kReferralPoints}',
+                            value: '${_referrals * RewardsRepository.current.referralPoints}',
                             label: tr('misc.pointsFromReferrals'),
                             valueSize: 32),
                       ),
@@ -313,7 +314,7 @@ class _ReferralScreenState extends State<ReferralScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Text('+$kReferralPoints ${tr('misc.pts')}',
+          Text('+${RewardsRepository.current.referralPoints} ${tr('misc.pts')}',
               style: AppText.barlow(
                   size: 13,
                   weight: FontWeight.w800,
