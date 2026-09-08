@@ -206,10 +206,9 @@ class AuthRepository {
   /// * **Sign up — `true`.** Always show the chooser. A phone with several
   ///   Google accounts would otherwise silently reuse whichever one was last
   ///   used, and the person creating a *new* YNO account is exactly the person
-  ///   most likely to want a different one. `GoogleSignIn` caches the last
-  ///   account, and signing out of it locally is the only way to make the
-  ///   chooser appear again — it clears nothing on Google's side and revokes
-  ///   nothing, it just forgets the local selection.
+  ///   most likely to want a different one. This needs `disconnect()`, not
+  ///   `signOut()` — see the note at the call below for why signing out alone
+  ///   silently failed to bring the chooser back.
   /// * **Log in — `false`.** Reuse the remembered account and get the user
   ///   straight in. [GoogleSignIn.signInSilently] returns it without any UI;
   ///   when there is nothing remembered it returns null and we fall back to the
@@ -221,9 +220,24 @@ class AuthRepository {
     final google = GoogleSignIn();
     GoogleSignInAccount? googleUser;
     if (forceAccountPicker) {
-      // Drop the cached selection so `signIn()` has to ask. Best-effort: if
-      // there was nothing cached this throws nothing useful, and failing here
-      // must not block the sign-up.
+      // ⚠️ `signOut()` alone is NOT enough on Android, which is why sign-up
+      // appeared to ignore this flag. It clears the plugin's cached account,
+      // but the app's OAuth grant with Google survives it — so Play Services
+      // is still free to hand the same account straight back with no chooser,
+      // which is precisely what this flag exists to stop.
+      //
+      // `disconnect()` revokes that grant, so the next `signIn()` has to ask
+      // again (account chooser, then a re-consent). That re-consent is the
+      // price of the guarantee; there is no lighter lever in google_sign_in v6,
+      // and v7 is a hard API break — see the signing notes.
+      //
+      // Both calls are best-effort: they throw when nothing is connected or
+      // cached, which is the normal first-run case, and neither failure should
+      // block a sign-up. `signOut()` still runs after `disconnect()` so the
+      // local selection is dropped even if the revoke was the thing that threw.
+      try {
+        await google.disconnect();
+      } catch (_) {/* nothing connected */}
       try {
         await google.signOut();
       } catch (_) {/* nothing cached */}
