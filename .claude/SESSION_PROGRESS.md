@@ -6868,3 +6868,240 @@ survived reboots; the bug was asking before it had been read back. Do not add a
   `yno-app-e96f5`.
 - 🟠 Help's email row still only toasts `support@nellab.org` without copying it
   or opening mail, and that mailbox still does not exist.
+
+## 83. Admin panel: referral reporting + editable point values (2026-09-07)
+
+`flutter analyze` clean, debug APK builds, web (admin panel) builds.
+
+### 🔴 First: the rules are STILL NOT DEPLOYED — proven, not assumed
+
+A disposable account was signed up against the live project and made one write
+to `feedback`. Result:
+
+    🔴 WRITE DENIED (403) → PERMISSION_DENIED: Missing or insufficient permissions.
+
+So **feedback submits fail in the app, and the admin FEEDBACK tab cannot read
+anything** — it will render its permission-denied error state. The panel itself
+is fine; it has nothing it is allowed to fetch.
+
+`firebase deploy --only firestore:rules --project yno-app-e96f5` is still
+blocked here: the CLI is signed in as `muhammadhuzaifamh777@gmail.com`, and
+`firebase projects:list` does not include `yno-app-e96f5`.
+
+**The rules file has grown again since** — `config/{doc}` was added this
+session. One deploy now covers both `feedback` and `config`.
+
+### Referral reporting in the users tab
+
+- Search now also matches the **referral code**, so "who owns AB12CD?" is one
+  query instead of a hunt.
+- Filter chips: All / Referrers / Was referred / Auto-created.
+- Every user card shows `code XXXXXX · N referred`, plus an `N referrals` badge.
+- Tapping a referrer's card opens the list of accounts that used their code,
+  newest first, with join dates and what it earned them.
+- A summary line above the list: how many users have referred, and how many
+  signups that is in total.
+
+🔑 Counted **in memory** from the existing `watchUsers()` stream by grouping on
+`referredBy`. `UserRepository.countReferrals` does a `where` query per user —
+correct for one profile screen, but one read per row per rebuild here, which on
+a few thousand users is a bill and a rate limit rather than a feature.
+
+🔑 The counts are computed from the **unfiltered** list. Filtering to
+"Referrers" and then counting would only ever count the rows still on screen.
+
+### Point values are now editable, not compiled in
+
+`kReferralPoints` (10), `kCommunityPlayerPoints` (20) and `kManOfMatchPoints`
+(30) were `const` — changing what a referral was worth needed a new build in
+every user's hands. They now live in `config/rewards` and the panel's **REWARDS**
+tab edits them.
+
+- `lib/services/rewards_config.dart` — `RewardsConfig` + `RewardsRepository`.
+- `RewardsRepository.current` is a plain static so the widgets that used to
+  interpolate a `const` still read it synchronously; `main()` awaits `load()`
+  before the first frame and then `listen()`s, so an admin's edit reaches
+  running apps without a restart.
+- Award paths (`_applyReferral`, `finalizeMatch`, `resolveCommunityAward`) are
+  async and read `current` at award time.
+
+⚠️ **The defaults in `RewardsConfig` are load-bearing** and must stay 10/20/30.
+They are what clients use before the document loads, if the read fails, and if
+the document has never been created — a network blip must not silently change
+what a match is worth. Each field also falls back independently, so a document
+written with only one of the three does not zero the other two.
+
+⚠️ **Changes are not retroactive.** Points already awarded were written to
+`users/{uid}.points` at the old value; editing changes future awards only. The
+tab says so.
+
+🔑 Rules: `config/{doc}` is world-readable (every client shows these numbers,
+some before sign-in) but **write is super-admin only** — `users` is writable by
+any signed-in user, so a client that could write here could make a referral
+worth 10,000 points and then award itself.
+
+### Not done
+
+- 🔴 Rules deploy (blocks feedback AND the rewards editor's save).
+- 🔴 Nothing device- or panel-verified. In particular the REWARDS tab has never
+  been opened, because signing into the panel needs the super-admin login.
+- 🟠 The referral list dialog loads every user into memory. Fine at current
+  scale; at tens of thousands it wants a real query and an index.
+
+### ✅ §83 addendum — the rules ARE deployed, and verified (2026-09-07)
+
+The user ran `firebase deploy --only firestore:rules --project yno-app-e96f5`
+themselves; it compiled and released. Confirmed against the live project, not
+taken on trust — a disposable account was signed up and used to probe five
+boundaries:
+
+| probe | result | wanted |
+|---|---|---|
+| write to `feedback` as its own author | ALLOWED | ALLOWED |
+| read `config/rewards` | ALLOWED | ALLOWED |
+| write `config` as a normal user | **DENIED** | DENIED |
+| file feedback with someone else's `uid` | **DENIED** | DENIED |
+| file feedback pre-set to `status: resolved` | **DENIED** | DENIED |
+| list all `feedback` as a normal user | **DENIED** | DENIED |
+
+So the feedback path and the rewards config are both live, and the collection is
+confirmed **not** world-readable. `server/test/` has no harness for this; the
+probes were throwaway scripts and cleaned up after themselves (row deleted,
+account deleted).
+
+`config/rewards` **does not exist yet** — reading it 404s, which is why the
+defaults in `RewardsConfig` matter. Saving once in the panel's REWARDS tab
+creates it.
+
+## 84. 👉 START HERE — state of play at the end of 2026-09-07
+
+Supersedes §80–§83 as "start here". **§79 remains the Play Store plan** and its
+blockers are unchanged; everything below is what moved around it.
+
+### Where the code is
+
+`flutter analyze` clean. Debug APK builds. Web (admin panel) builds. A **release
+`.aab` exists and is current** — `build/app/outputs/bundle/release/app-release.aab`,
+48.9 MB, built 2026-09-07 20:53 from the code as it stands, signed with the
+release key (`META-INF/YNO.RSA`), no service-account key inside.
+
+⚠️ **Nothing in §80–§83 has run on a device.** Zero device runs since 2026-08-29.
+That covers referral links, live extra time, shootout scorers, the stopwatch,
+the feedback feature, the Google account-picker split, the reboot fix, the
+admin panel's two new tabs. All analyzer- and build-verified only.
+
+### ✅ Firestore rules — DEPLOYED and boundary-verified
+
+The user deployed them. Verified against the live project with a disposable
+account (both cleaned up afterwards), not taken on trust:
+
+| probe | result |
+|---|---|
+| write `feedback` as its own author | ALLOWED ✅ |
+| read `config/rewards` | ALLOWED ✅ |
+| write `config` as a normal user | DENIED ✅ |
+| file feedback under another user's `uid` | DENIED ✅ |
+| file feedback pre-set to `resolved` | DENIED ✅ |
+| list all `feedback` as a normal user | DENIED ✅ |
+
+So bug reports save, the FEEDBACK tab can read, and reports are private to their
+author and the super-admin.
+
+🔑 **`config/rewards` does not exist yet** (reading it 404s). Every client runs
+on the `RewardsConfig` defaults — 10 / 20 / 30 — until someone saves once in the
+panel's REWARDS tab. That is correct behaviour, not a bug.
+
+### 🔴 The website is NOT deployed — and the 200s lie
+
+`D:\Web\yno`, the nellab.org React site. **A different Firebase project from the
+app**: `yalla-nellab-12650`, not `yno-app-e96f5`. Deploying the app's rules did
+nothing for it.
+
+    cd D:\Web\yno && npm run build
+    firebase deploy --only hosting --project yalla-nellab-12650
+
+⚠️ **Do not check this with a status code.** `nellab.org/r/TESTCODE` returns
+**HTTP 200** because the SPA rewrite sends every path to `index.html`. React
+Router then finds no `/r` route in the deployed bundle and falls through to the
+marketing homepage. Verify by grepping the live bundle instead:
+
+    curl -s https://nellab.org/ | grep -o '/static/js/main\.[a-z0-9]*\.js'
+    curl -s https://nellab.org/static/js/main.<hash>.js | grep -c refAutoApplied
+
+`refAutoApplied` and `yno_referral` are this session's strings — **0 in the live
+bundle** as of now. (`refWelcome` is 1, but that is the older dormant copy and
+proves nothing.)
+
+⚠️ **`/.well-known/assetlinks.json` serves `[]`** — 2 bytes, an empty array,
+Firebase Hosting's default when no app is associated. Correct content type,
+no fingerprints. App Links verification therefore fails and referral links open
+in Chrome even on a phone that has YNO. The real file, with both SHA-256s, is in
+`D:\Web\yno\public\.well-known\` and builds into `build/` correctly — it just
+has never shipped.
+
+### Why referral links are dead — three independent causes
+
+1. `/r/<code>` route not deployed (above).
+2. `assetlinks.json` empty (above).
+3. **The Play listing 404s** — `org.nellab.yno` is not published, so the
+   not-installed path, which is the entire point of the Install Referrer
+   mechanism, leads to a dead URL.
+
+(1) and (2) are one deploy. (3) needs the listing and nothing can shortcut it.
+
+### The repo now exists — and it is PUBLIC
+
+<https://github.com/Huzaifa-Muhammed/yno-app>, branch `main`, one commit
+(`0593eb2`), 268 files. See [[yno-github-repo]].
+
+🔴 **`lib/admin/admin_config.dart` is public and contains
+`huzaifa@admin.com` / `123456`.** That file's own doc says the account is
+**created on first successful login**, and the panel can wipe the database. If
+that account does not exist yet, anyone reading the repo can create it.
+**Closing it: log into the panel once (claims the account), then change the
+password in Firebase Console → Authentication.** The durable fix is moving the
+credentials to `--dart-define`; not done.
+
+### Play Store — unchanged, and the developer account does not exist
+
+The user shared `my.play/HeartyTooth145`, which redirects to
+`play.google.com/profile/HeartyTooth145` — that is a **Play user/games profile**,
+not a developer account. Publishing needs a separate **Play Console** account
+(`play.google.com/console/signup`, one-time $25 + identity verification).
+
+Blockers, all from §79 and all still true:
+
+- 🔴 **Unbranded** — `android:label="ynoapp"`, every `ic_launcher.png` still the
+  Flutter template (544–1443 bytes, dated 2025-10-09), no adaptive icon, and
+  neither `flutter_launcher_icons` nor `flutter_native_splash` in `pubspec.yaml`.
+  **The only code work left.** ~half a day.
+- 🔴 **Keystore has no off-machine backup.** Permanent loss once published.
+- 🔴 **No Play Console account.** ⏰ Personal vs organisation is chosen at signup
+  and is the schedule driver — personal triggers 12 testers × 14 continuous days.
+- ⚠️ The `123456` auto-account password is the client's standing decision; put it
+  back to them as a launch call rather than "fixing" it.
+
+After the first upload: register Play App Signing's **SHA-1 in Firebase**
+(Google sign-in) **and its SHA-256 in `assetlinks.json`** (App Links). Same
+certificate, two hashes, both break in production if missed.
+
+### Suggested order next session
+
+1. Log into the admin panel once + change the password (closes the public
+   credential hole). `flutter run -d chrome`, `huzaifa@admin.com` / `123456`.
+2. Save once in REWARDS to create `config/rewards`.
+3. Send a test bug report from the app → confirm it lands in FEEDBACK.
+4. Deploy the website → referral pages + assetlinks live.
+5. Back up the keystore.
+6. Branding pass (icon + label) — the last code blocker.
+7. Register the Play Console account.
+
+### Still open from before
+
+C9 + C19 and C8 (need a second participant; `server/test/device_second_actor.mjs`
+exists), the admin-dashboard dispose site (web-only, needs the super-admin
+login — now reachable once the account exists), §75's `_dependents.isEmpty` red
+screen, the Arabic review queue (now much larger — §80–§83 all added unreviewed
+Arabic), `support@nellab.org` mailbox, `og:image`, stale `src/App.test.js`, a
+lawyer on the legal docs, and revoking FCM key `fade14a1…` once a keyless build
+is live.
