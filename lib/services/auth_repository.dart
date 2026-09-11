@@ -6,6 +6,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import '../firebase_options.dart';
 import 'codes.dart';
+import 'match_repository.dart';
 import 'models.dart';
 import 'notification_repository.dart';
 import 'push_service.dart';
@@ -94,6 +95,33 @@ class AuthRepository {
     return referrerUid;
   }
 
+  /// Fold in everything this person already did as an accountless `g_…` guest
+  /// — career stats, and any MOTM or community award parked on those records.
+  ///
+  /// ⚠️ `MatchRepository.claimGuestStats` existed from the start but **nothing
+  /// ever called it**, so a guest who signed up afterwards arrived with an
+  /// empty profile and none of the points their awards were worth. This is that
+  /// call.
+  ///
+  /// Best-effort by design: a sign-up must not fail because a backfill did.
+  Future<void> _claimGuestRecords(String uid,
+      {String? phone, String? email}) async {
+    try {
+      final claim = await MatchRepository.instance
+          .claimGuestStats(uid, phone: phone, email: email);
+      if (claim.isEmpty) return;
+      final matches =
+          '${claim.matches} ${claim.matches == 1 ? "match" : "matches"}';
+      await NotificationRepository.instance.add(uid,
+          title: 'Guest matches restored 🎁',
+          body: claim.points > 0
+              ? '$matches you played as a guest are now on your profile, '
+                  'including +${claim.points} points from your awards.'
+              : '$matches you played as a guest are now on your profile.',
+          category: NotifCategory.points);
+    } catch (_) {/* the account is created either way */}
+  }
+
   /// Register a new email/password account. Onboarding is now minimal: name,
   /// email, password (+ optional referral). The @username is auto-generated from
   /// the name if not supplied; everything else (position, foot, photo, …) is
@@ -147,6 +175,7 @@ class AuthRepository {
     if (referrer != null) {
       await _applyReferral(referralCode ?? '', uid, fullName);
     }
+    await _claimGuestRecords(uid, phone: phone, email: email.trim());
 
     await cred.user!.updateDisplayName(fullName);
     await PushService.instance.registerCurrentDevice();
@@ -282,6 +311,8 @@ class AuthRepository {
       if (referrer != null) {
         await _applyReferral(referralCode ?? '', uid, name);
       }
+      // Google gives us no phone number, so this matches on the address only.
+      await _claimGuestRecords(uid, email: email);
     }
     await PushService.instance.registerCurrentDevice();
     return GoogleAuthResult(uid: uid, isNew: isNew);

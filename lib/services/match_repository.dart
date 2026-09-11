@@ -1458,8 +1458,16 @@ class MatchRepository {
       // Admin scorecard corrections stay open longer (24h).
       'editableUntil': Timestamp.fromDate(now.add(const Duration(hours: 24))),
     });
-    if (motm != null && hasAccount(motm)) {
-      await users.addPoints(motm.uid, RewardsRepository.current.manOfMatchPoints);
+    if (motm != null) {
+      if (hasAccount(motm)) {
+        await users.addPoints(
+            motm.uid, RewardsRepository.current.manOfMatchPoints);
+      } else {
+        // No account to credit — park it on their guest record instead of
+        // dropping it on the floor. See [_creditGuestAward].
+        await _creditGuestAward(motm.uid,
+            points: RewardsRepository.current.manOfMatchPoints, motm: true);
+      }
     }
 
     // Career + guest stats.
@@ -1618,6 +1626,13 @@ class MatchRepository {
           category: NotifCategory.award,
           route: '/post-match',
           arg: matchId);
+    } else if (wp != null) {
+      // An accountless `g_…` guest won the vote. There is no profile to credit
+      // and no bell to ring, so the award waits on their guest record for the
+      // day they sign up.
+      await _creditGuestAward(winner,
+          points: RewardsRepository.current.communityPlayerPoints,
+          community: true);
     }
   }
 
@@ -1680,42 +1695,155 @@ class MatchRepository {
 
   // ---- Guest claim ------------------------------------------------------
 
+  /// Park an award earned by an accountless `g_…` guest on their guest record.
+  ///
+  /// Points only exist as a field on `users/{uid}`, and a guest has no user
+  /// document — so before this existed, a guest who was Man of the Match or won
+  /// the community vote simply earned nothing, and signing up later could not
+  /// recover it because nothing had remembered it. [claimGuestStats] pays out
+  /// whatever is parked here.
+  ///
+  /// ⚠️ If the record has **already been claimed**, parking would strand the
+  /// award — the claim query only looks at unclaimed records, and it has
+  /// already run. That is a real sequence, not a theoretical one: the community
+  /// award resolves six hours after the whistle and a guest can sign up inside
+  /// that window. So it is paid straight to the account that claimed it.
+  ///
+  /// A uid with no guest record at all gets nothing: there is no email on file,
+  /// so no sign-up could ever find it. Creating one here would leave an
+  /// unclaimable document behind and nothing else.
+  Future<void> _creditGuestAward(
+    String guestUid, {
+    required int points,
+    bool motm = false,
+    bool community = false,
+  }) async {
+    if (guestUid.isEmpty || points <= 0) return;
+    final ref = _guests.doc(guestUid);
+    final data = (await ref.get()).data();
+    if (data == null) return;
+
+    final claimedBy = (data['claimedBy'] ?? '') as String;
+    if ((data['claimed'] ?? false) == true && claimedBy.isNotEmpty) {
+      await UserRepository.instance.addPoints(claimedBy, points);
+      final counters = <String, dynamic>{
+        if (motm) 'motmCount': FieldValue.increment(1),
+        if (community) 'communityCount': FieldValue.increment(1),
+      };
+      if (counters.isNotEmpty) {
+        await _db.collection('users').doc(claimedBy).update(counters);
+      }
+      return;
+    }
+
+    await ref.set({
+      'pendingPoints': FieldValue.increment(points),
+      if (motm) 'pendingMotm': FieldValue.increment(1),
+      if (community) 'pendingCommunity': FieldValue.increment(1),
+    }, SetOptions(merge: true));
+  }
+
   /// Auto-claim: fold every unclaimed guest record matching [phone]/[email]
-  /// into [uid]'s career stats. Called on sign-up.
-  Future<int> claimGuestStats(String uid,
+  /// into [uid]'s career stats **and** pay out any award parked on them by
+  /// [_creditGuestAward]. Called on sign-up.
+  Future<GuestClaim> claimGuestStats(String uid,
       {String? phone, String? email}) async {
     final users = UserRepository.instance;
-    final matches = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    // Keyed by document id: a record carrying both the phone and the email
+    // matches both queries, and folding it twice would pay its award twice.
+    final found = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
     if (phone != null && phone.isNotEmpty) {
-      matches.addAll((await _guests
+      for (final d in (await _guests
               .where('phone', isEqualTo: phone)
               .where('claimed', isEqualTo: false)
               .get())
-          .docs);
+          .docs) {
+        found[d.id] = d;
+      }
     }
     if (email != null && email.isNotEmpty) {
-      matches.addAll((await _guests
+      for (final d in (await _guests
               .where('email', isEqualTo: email)
               .where('claimed', isEqualTo: false)
               .get())
-          .docs);
+          .docs) {
+        found[d.id] = d;
+      }
     }
-    var claimed = 0;
-    for (final d in matches) {
-      final data = d.data();
+
+    var claimed = 0, points = 0, motm = 0, community = 0;
+    for (final d in found.values) {
+      // Flip `claimed` and read the record in the SAME transaction, so the
+      // award is paid by whoever wins the flip and by nobody else. Awarding
+      // first and marking after would pay twice if two sign-ups raced on one
+      // phone number; marking first and awarding after would lose the points
+      // outright if the award write failed.
+      final data = await _db.runTransaction<Map<String, dynamic>?>((tx) async {
+        final cur = (await tx.get(d.reference)).data();
+        if (cur == null || (cur['claimed'] ?? false) == true) return null;
+        tx.update(d.reference, {
+          'claimed': true,
+          'claimedBy': uid,
+          'pendingPoints': 0,
+          'pendingMotm': 0,
+          'pendingCommunity': 0,
+        });
+        return cur;
+      });
+      if (data == null) continue; // claimed by someone else first
+
+      int intOf(String key) {
+        final v = data[key];
+        return v is num ? v.toInt() : 0;
+      }
+
+      final wasMotm = intOf('pendingMotm') > 0;
+      final wasCommunity = intOf('pendingCommunity') > 0;
       if ((data['result'] ?? '') != '') {
         await users.applyMatchStats(
           uid,
-          goals: (data['goals'] ?? 0) as int,
-          assists: (data['assists'] ?? 0) as int,
+          goals: intOf('goals'),
+          assists: intOf('assists'),
           result: (data['result'] ?? 'draw') as String,
+          // The trophies come back with the points: `motmCount` and
+          // `communityCount` are what the profile actually renders.
+          motm: wasMotm,
+          community: wasCommunity,
           surface: data['surface'] as String?,
           format: data['format'] as String?,
         );
       }
-      await d.reference.update({'claimed': true, 'claimedBy': uid});
+      final parked = intOf('pendingPoints');
+      if (parked > 0) {
+        await users.addPoints(uid, parked);
+        points += parked;
+      }
+      if (wasMotm) motm++;
+      if (wasCommunity) community++;
       claimed++;
     }
-    return claimed;
+    return GuestClaim(
+        matches: claimed, points: points, motm: motm, community: community);
   }
+}
+
+/// What [MatchRepository.claimGuestStats] folded into a brand-new account.
+class GuestClaim {
+  const GuestClaim({
+    this.matches = 0,
+    this.points = 0,
+    this.motm = 0,
+    this.community = 0,
+  });
+
+  /// Guest records claimed — one per match played without an account.
+  final int matches;
+
+  /// Points paid out for awards won as a guest (MOTM + community).
+  final int points;
+
+  final int motm;
+  final int community;
+
+  bool get isEmpty => matches == 0;
 }

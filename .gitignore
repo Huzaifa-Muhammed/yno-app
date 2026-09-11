@@ -52,6 +52,8 @@ app.*.map.json
 # Local Firebase emulator output.
 firestore-debug.log
 firebase-debug.log
+# Firebase Hosting deploy cache — hashes of the last uploaded build.
+.firebase/
 ui-debug.log
 
 # Android Gradle build output (the root /build/ rule doesn't cover this one).
