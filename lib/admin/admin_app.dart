@@ -7,6 +7,18 @@ import '../theme/app_theme.dart';
 import 'admin_config.dart';
 import 'admin_dashboard.dart';
 
+/// The "Sign In" label on the volt button.
+///
+/// `AppColors.ink` is the shared "text on the accent fill" colour and sits at
+/// roughly 20% saturation — near-neutral black. This pushes that to ~55% at the
+/// volt hue itself, so the label reads as a deep olive rather than a grey-black,
+/// without giving up any real contrast against `AppColors.primary`.
+///
+/// Deliberately local to the admin panel. `AppColors.ink` is the colour on every
+/// accent-filled control in the PLAYER app too, and this is a change to one
+/// button, not to the brand.
+const Color _adminInk = Color(0xFF151807);
+
 /// The web-only super-admin app. `main.dart` runs this instead of `YnoApp` when
 /// `kIsWeb`. It shows an email + password login ([_AdminLogin]); only the
 /// super-admin account (see [kSuperAdmins]) may sign in, after which the
@@ -217,7 +229,7 @@ class _AdminLoginState extends State<_AdminLogin> {
                       onPressed: _busy ? null : _submit,
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.ink,
+                        foregroundColor: _adminInk,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                       ),
@@ -226,7 +238,7 @@ class _AdminLoginState extends State<_AdminLogin> {
                               width: 22,
                               height: 22,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2.4, color: AppColors.ink),
+                                  strokeWidth: 2.4, color: _adminInk),
                             )
                           : Text('Sign In',
                               style: AppText.condensed(
