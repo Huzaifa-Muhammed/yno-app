@@ -1,0 +1,5 @@
+# The admin panel must never be indexed. Firebase Hosting also sends an
+# X-Robots-Tag: noindex header (see firebase.json) — this file is the polite
+# half of the same request, the header is the part crawlers cannot ignore.
+User-agent: *
+Disallow: /

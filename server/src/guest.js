@@ -68,7 +68,9 @@ import {
   findMatchByCode,
   findUserByEmail,
   getDoc,
+  incrementBy,
   serverTime,
+  stringArray,
   v,
 } from './firestore.js';
 import { customToken } from './google.js';
@@ -149,6 +151,63 @@ async function resolveJoiner(env, name, email) {
   };
 }
 
+/** Default join bonus — must equal `RewardsConfig.joinMatchPoints` in the app. */
+export const DEFAULT_JOIN_POINTS = 50;
+
+/**
+ * The join-coin credit for a web joiner, or `null` when nobody qualifies.
+ *
+ * The app awards these in `MatchRepository._awardMatchCoins`, and a visitor who
+ * arrives through the website has joined exactly the same match — so skipping
+ * it here would make the reward depend on which door you came through.
+ *
+ * Three things have to match the app's behaviour:
+ *
+ *  * **The amount is not compiled in.** It comes from `config/rewards`, the
+ *    document the super-admin panel edits, so changing it changes both clients
+ *    at once. A missing document or a failed read falls back to
+ *    [DEFAULT_JOIN_POINTS] rather than paying nothing, and 0 means the award
+ *    has been switched off.
+ *  * **Once per match per person**, tracked in `awardedCoinUids` on the match.
+ *    The caller's “already in the roster” check does not cover this: leaving a
+ *    lobby deletes the player document, so a rejoin looks brand new.
+ *  * **Accountless `g_…` guests get nothing** — there is no profile to credit.
+ *
+ * ⚠️ Returns bare field TRANSFORMS, not writes, and that is deliberate.
+ * `:commit` allows one write per document per request, and both documents these
+ * touch are already being written by the join: `users/{uid}` by the profile
+ * write when the account is new, `matches/{id}` by the `playerUids` append. The
+ * caller folds them into those writes — see [duplicateWriteDocument].
+ */
+export async function joinCoinWrites(env, matchId, uid, { accountless }) {
+  if (accountless || !uid) return null;
+  let points = DEFAULT_JOIN_POINTS;
+  try {
+    const cfg = await getDoc(env, 'config', 'rewards');
+    const raw = cfg?.fields?.joinMatchPoints?.integerValue;
+    if (raw !== undefined) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 0) points = n;
+    }
+  } catch (err) {
+    console.error('guest join: rewards config read failed', err);
+  }
+  if (points <= 0) return null;
+  try {
+    const matchDoc = await getDoc(env, 'matches', matchId);
+    if (stringArray(matchDoc, 'awardedCoinUids').includes(uid)) return null;
+  } catch (err) {
+    // Do not guess when the guard cannot be read — paying twice is worse than
+    // not paying, and the app will not top it up later either way.
+    console.error('guest join: awardedCoinUids read failed', err);
+    return null;
+  }
+  return {
+    points,
+    userTransform: incrementBy('points', points),
+    matchTransform: appendToArray('awardedCoinUids', v.str(uid)),
+  };
+}
 /**
  * Add someone to a match from the website.
  *
@@ -219,6 +278,7 @@ export async function guestJoin(env, { code, name, email, phone }) {
   }
 
   const writes = [];
+  let coins = null;
   if (joiner.profile) writes.push(joiner.profile);
 
   if (accountless) {
@@ -276,17 +336,71 @@ export async function guestJoin(env, { code, name, email, phone }) {
     // real uids in this match, and the app puts auto-created players in it while
     // still flagging them guests (`addTeamRoster`). Only a `g_…` id stays out —
     // it is not a uid and every query reading this array would choke on it.
+    // Join coins, in this same commit so the credit cannot land without the
+    // roster entry. Only on this branch: a live match queues the visitor in
+    // `pending` instead, and the host's approval runs `approvePending` ->
+    // `joinMatch` in the app, which pays them there.
+    coins = await joinCoinWrites(env, match.id, uid, { accountless });
+    if (coins) {
+      if (joiner.profile) {
+        // A brand-new account: `users/{uid}` is ALREADY being written by the
+        // profile write pushed above, and a second write to it would have the
+        // whole commit rejected. Mutating that write (it is the same object
+        // sitting in `writes`) is the only way to touch the document twice.
+        // `updateTransforms` run after the update, so `points: 0` from
+        // `profileFields` becomes the bonus rather than overwriting it.
+        joiner.profile.updateTransforms.push(coins.userTransform);
+      } else {
+        writes.push({
+          transform: {
+            document: docPath(env, `users/${uid}`),
+            fieldTransforms: [coins.userTransform],
+          },
+        });
+      }
+    }
     if (!accountless) {
       writes.push({
         transform: {
           document: docPath(env, `matches/${match.id}`),
-          fieldTransforms: [appendToArray('playerUids', v.str(uid))],
+          // One write per document per commit: `playerUids` and
+          // `awardedCoinUids` are two transforms on the SAME match document and
+          // have to share one. `coins` is null whenever `accountless` is, so
+          // this never adds a stray transform for a `g_…` id.
+          fieldTransforms: [
+            appendToArray('playerUids', v.str(uid)),
+            ...(coins ? [coins.matchTransform] : []),
+          ],
         },
       });
     }
   }
 
   await commit(env, writes);
+
+  // The joiner's own bell entry for the coins. Best-effort and after the
+  // commit, like the host's below: the points are already banked, and a failed
+  // notification must not look like a failed join.
+  if (coins) {
+    try {
+      await commit(env, [{
+        update: {
+          name: docPath(env, `users/${uid}/notifications/join-${match.id}`),
+          fields: {
+            title: v.str('Match joined'),
+            body: v.str(`You earned +${coins.points} points for joining a match.`),
+            category: v.str('points'),
+            route: v.str('/home'),
+            arg: v.str(match.id),
+            read: v.bool(false),
+          },
+        },
+        updateTransforms: [serverTime('at')],
+      }]);
+    } catch (err) {
+      console.error('guest join: coin notification failed', err);
+    }
+  }
 
   // The host's bell entry. Best-effort, exactly as it is in the app: a failure
   // here must not undo a join that already succeeded. Skipped when the joiner IS

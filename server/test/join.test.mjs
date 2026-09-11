@@ -10,7 +10,8 @@ import { test } from 'node:test';
 import { ALPHABET, randomCode } from '../src/codes.js';
 import { firstNameOf, profileFields, profileWrite, AUTO_ACCOUNT_PASSWORD }
     from '../src/account.js';
-import { v } from '../src/firestore.js';
+import { duplicateWriteDocument, incrementBy, stringArray, v }
+    from '../src/firestore.js';
 
 // ---- codes ---------------------------------------------------------------
 
@@ -42,6 +43,87 @@ test('v.arr and v.map encode empties the way Firestore expects', () => {
   assert.deepEqual(v.map({}), { mapValue: { fields: {} } });
   assert.deepEqual(v.arr([v.str('a')]),
       { arrayValue: { values: [{ stringValue: 'a' }] } });
+});
+
+// ---- join coins ----------------------------------------------------------
+//
+// `joinCoinWrites` itself reads Firestore, so what is covered here is the two
+// pure pieces it is built on. Both are load-bearing in the same direction: if
+// `stringArray` hands back an empty list for a match that HAS paid someone, the
+// worker pays them a second time, and nothing about that fails loudly.
+
+test('stringArray reads a real arrayValue field', () => {
+  const doc = { fields: { awardedCoinUids: v.arr([v.str('u1'), v.str('u2')]) } };
+  assert.deepEqual(stringArray(doc, 'awardedCoinUids'), ['u1', 'u2']);
+});
+
+test('stringArray is empty — never null — for every shape of absence', () => {
+  // A match nobody has been paid for yet has no such field at all, and the
+  // very first join in the app's history arrives before the field exists.
+  assert.deepEqual(stringArray({ fields: {} }, 'awardedCoinUids'), []);
+  assert.deepEqual(stringArray({}, 'awardedCoinUids'), []);
+  assert.deepEqual(stringArray(null, 'awardedCoinUids'), []);
+  assert.deepEqual(stringArray(undefined, 'awardedCoinUids'), []);
+  assert.deepEqual(
+      stringArray({ fields: { awardedCoinUids: v.arr([]) } }, 'awardedCoinUids'),
+      []);
+});
+
+test('stringArray drops non-string entries instead of returning undefined', () => {
+  // A hand-edited document could hold anything. `[undefined].includes(uid)` is
+  // false either way, but a list with holes in it would defeat a later
+  // `.filter`/`.length` read of the same value.
+  const doc = { fields: { awardedCoinUids: v.arr([v.str('u1'), v.int(7)]) } };
+  assert.deepEqual(stringArray(doc, 'awardedCoinUids'), ['u1']);
+});
+
+test('incrementBy encodes FieldValue.increment as a typed integer', () => {
+  // `integerValue` must be a STRING in the REST API — a raw number is rejected.
+  assert.deepEqual(incrementBy('points', 50),
+      { fieldPath: 'points', increment: { integerValue: '50' } });
+});
+
+
+// ---- one write per document ---------------------------------------------
+//
+// Regression cover for the way the join coins were first wired in: a separate
+// transform write on `users/{uid}` and another on `matches/{id}`, both of which
+// the join was ALREADY writing. Firestore rejects the whole commit for that, so
+// every web join by a new account would have failed — and the coins are the
+// least important thing in that request.
+
+test('duplicateWriteDocument passes a batch that touches each document once', () => {
+  assert.equal(duplicateWriteDocument([
+    { update: { name: 'p/users/u1' }, updateTransforms: [] },
+    { update: { name: 'p/matches/m1/players/u1' } },
+    { transform: { document: 'p/matches/m1', fieldTransforms: [] } },
+  ]), null);
+  assert.equal(duplicateWriteDocument([]), null);
+  assert.equal(duplicateWriteDocument(undefined), null);
+});
+
+test('duplicateWriteDocument catches a profile write plus a points transform', () => {
+  // The exact shape of the bug: `profileWrite` creates users/{uid} and the
+  // coin credit tried to transform the same document in the same commit.
+  assert.equal(duplicateWriteDocument([
+    { update: { name: 'p/users/u1' }, updateTransforms: [] },
+    { transform: { document: 'p/users/u1', fieldTransforms: [] } },
+  ]), 'p/users/u1');
+});
+
+test('duplicateWriteDocument catches two transforms on the same match', () => {
+  // `playerUids` and `awardedCoinUids` have to share one write.
+  assert.equal(duplicateWriteDocument([
+    { transform: { document: 'p/matches/m1', fieldTransforms: [] } },
+    { transform: { document: 'p/matches/m1', fieldTransforms: [] } },
+  ]), 'p/matches/m1');
+});
+
+test('duplicateWriteDocument sees deletes too', () => {
+  assert.equal(duplicateWriteDocument([
+    { delete: 'p/guests/g1' },
+    { delete: 'p/guests/g1' },
+  ]), 'p/guests/g1');
 });
 
 // ---- name splitting ------------------------------------------------------

@@ -42,6 +42,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
   final _refPointsCtl = TextEditingController();
   final _communityPointsCtl = TextEditingController();
   final _motmPointsCtl = TextEditingController();
+  final _joinPointsCtl = TextEditingController();
+  final _createPointsCtl = TextEditingController();
   bool _rewardsDirty = false;
   bool _savingRewards = false;
 
@@ -60,6 +62,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
     _refPointsCtl.dispose();
     _communityPointsCtl.dispose();
     _motmPointsCtl.dispose();
+    _joinPointsCtl.dispose();
+    _createPointsCtl.dispose();
     super.dispose();
   }
 
@@ -542,10 +546,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   /// Editor for `config/rewards`.
   ///
-  /// These three numbers used to be `const` in the Dart source, so changing what
-  /// a referral was worth meant shipping a new build to every phone. They are a
+  /// The first three used to be `const` in the Dart source, so changing what a
+  /// referral was worth meant shipping a new build to every phone. They are a
   /// Firestore document now: saving here reaches running apps through
-  /// `RewardsRepository.listen()` without a release.
+  /// `RewardsRepository.listen()` without a release. The join and create
+  /// bonuses were born here and were never compiled in.
   ///
   /// ⚠️ Changes are **not retroactive**. Points already awarded were written to
   /// `users/{uid}.points` with whatever the value was at the time; editing these
@@ -600,6 +605,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
               label: 'Man of the Match',
               help: 'Awarded to the algorithm MOTM (most goals, then assists).',
             ),
+            _rewardField(
+              controller: _joinPointsCtl,
+              label: 'Joining a match',
+              help: 'Awarded the first time a player enters a match — by code, '
+                  'invite, saved team, or added by the host. Once per match '
+                  'each: rejoining pays nothing. Accountless guests get '
+                  'nothing (no profile to credit). Set to 0 to switch off.',
+            ),
+            _rewardField(
+              controller: _createPointsCtl,
+              label: 'Creating a match',
+              help: 'Awarded to the creator when the match is made. They get '
+                  'this INSTEAD of the joining bonus, not as well as it. '
+                  'Set to 0 to switch off.',
+            ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -636,7 +656,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
             Text(
                 'Referral ${cfg.referralPoints} · '
                 'Community ${cfg.communityPlayerPoints} · '
-                'MOTM ${cfg.manOfMatchPoints}',
+                'MOTM ${cfg.manOfMatchPoints} · '
+                'Join ${cfg.joinMatchPoints} · '
+                'Create ${cfg.createMatchPoints}',
                 style: AppText.barlow(size: 14)),
           ],
         );
@@ -648,6 +670,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
     _refPointsCtl.text = '${cfg.referralPoints}';
     _communityPointsCtl.text = '${cfg.communityPlayerPoints}';
     _motmPointsCtl.text = '${cfg.manOfMatchPoints}';
+    _joinPointsCtl.text = '${cfg.joinMatchPoints}';
+    _createPointsCtl.text = '${cfg.createMatchPoints}';
   }
 
   Widget _rewardField({
@@ -700,6 +724,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
       communityPlayerPoints:
           parse(_communityPointsCtl, currentCfg.communityPlayerPoints),
       manOfMatchPoints: parse(_motmPointsCtl, currentCfg.manOfMatchPoints),
+      joinMatchPoints: parse(_joinPointsCtl, currentCfg.joinMatchPoints),
+      createMatchPoints:
+          parse(_createPointsCtl, currentCfg.createMatchPoints),
     );
     setState(() => _savingRewards = true);
     try {

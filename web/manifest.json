@@ -1,11 +1,11 @@
 {
-    "name": "ynoapp",
-    "short_name": "ynoapp",
+    "name": "YNO Super Admin",
+    "short_name": "YNO Admin",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "YNO super-admin control panel.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

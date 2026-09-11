@@ -24,6 +24,8 @@ class MatchRepository {
       _db.collection('matches');
   CollectionReference<Map<String, dynamic>> get _guests =>
       _db.collection('guests');
+  CollectionReference<Map<String, dynamic>> get _users =>
+      _db.collection('users');
 
   CollectionReference<Map<String, dynamic>> _players(String id) =>
       _matches.doc(id).collection('players');
@@ -35,6 +37,68 @@ class MatchRepository {
       _matches.doc(id).collection('penalties');
   CollectionReference<Map<String, dynamic>> _votes(String id) =>
       _matches.doc(id).collection('votes');
+
+  // ---- Match coins ------------------------------------------------------
+
+  /// Credit the one-off coins a player earns for being in a match: the create
+  /// bonus for the host, the join bonus for everybody else. Both values are
+  /// live-edited by the super-admin panel (`config/rewards`), and setting
+  /// either to 0 turns that award off without a release.
+  ///
+  /// 🔑 **Once per match per person.** The match document carries
+  /// `awardedCoinUids`, the list of everyone already paid for this match, and
+  /// the check plus the credit happen in ONE transaction across the match and
+  /// the user document. That is what stops the obvious exploits — leaving the
+  /// lobby and rejoining on the same code, being removed by the host and added
+  /// back, or two devices joining at the same instant. It also means the
+  /// creator, who is added to the line-up by [createMatch], collects the create
+  /// bonus and then no longer qualifies for the join one.
+  ///
+  /// Two people are deliberately skipped:
+  ///  * an accountless `g_…` guest — there is no `users/{uid}` profile to
+  ///    credit, and their stats only land if they later claim the account;
+  ///  * any uid whose profile has since been deleted (the transaction reads it
+  ///    and bails), so a stray award can never resurrect a stub document.
+  ///
+  /// Best-effort throughout: a failure here must never fail the join itself.
+  /// Losing 50 points is a nuisance, not being able to get into the match is
+  /// the whole app.
+  Future<void> _awardMatchCoins(
+    String matchId, {
+    required String uid,
+    required int points,
+    required String title,
+    required String body,
+  }) async {
+    if (points <= 0 || uid.isEmpty || uid.startsWith('g_')) return;
+    try {
+      final matchRef = _matches.doc(matchId);
+      final userRef = _users.doc(uid);
+      final credited = await _db.runTransaction<bool>((tx) async {
+        final m = await tx.get(matchRef);
+        if (!m.exists) return false;
+        final already = (m.data()?['awardedCoinUids'] as List?) ?? const [];
+        if (already.map((e) => '$e').contains(uid)) return false;
+        // Read before write, always — and this read is also the guard that the
+        // profile exists at all.
+        final u = await tx.get(userRef);
+        if (!u.exists) return false;
+        tx.update(matchRef, {
+          'awardedCoinUids': FieldValue.arrayUnion([uid]),
+        });
+        tx.update(userRef, {'points': FieldValue.increment(points)});
+        return true;
+      });
+      if (!credited) return;
+      await NotificationRepository.instance.emit(
+        uid,
+        title: title,
+        body: body,
+        category: NotifCategory.points,
+        route: '/home',
+      );
+    } catch (_) {/* best-effort — never break the join over a reward */}
+  }
 
   // ---- Creation ---------------------------------------------------------
 
@@ -118,6 +182,18 @@ class MatchRepository {
             isAdmin: true,
           ).toMap());
     }
+    // The create bonus, before any roster is pulled in. Order matters: in
+    // `adminOnlyMode` the creator is not a player, so a saved Team A that has
+    // them on its roster would otherwise pay them the (smaller) join bonus
+    // first and leave them ineligible for this one.
+    await _awardMatchCoins(
+      ref.id,
+      uid: adminUid,
+      points: RewardsRepository.current.createMatchPoints,
+      title: 'Match created',
+      body: 'You earned +${RewardsRepository.current.createMatchPoints} '
+          'points for creating a match.',
+    );
     // A saved team picked for a side brings its whole roster into the line-up.
     // Side B skips this when it's a *pending challenge* — those players come in
     // only if/when the challenged team accepts (see [acceptChallenge]).
@@ -470,6 +546,18 @@ class MatchRepository {
     await _matches.doc(matchId).update({
       'playerUids': FieldValue.arrayUnion([uid]),
     });
+    // Every way into a match funnels through here — a code, an accepted
+    // invite, an approved mid-game request, the host adding somebody by email —
+    // so this one call covers them all. The saved-team roster is the single
+    // exception: it batches its players in directly, and pays them itself.
+    await _awardMatchCoins(
+      matchId,
+      uid: uid,
+      points: RewardsRepository.current.joinMatchPoints,
+      title: 'Match joined',
+      body: 'You earned +${RewardsRepository.current.joinMatchPoints} '
+          'points for joining a match.',
+    );
     try {
       final m = await getMatch(matchId);
       if (m != null && m.adminUid.isNotEmpty && m.adminUid != uid) {
@@ -581,6 +669,26 @@ class MatchRepository {
     if (toAdd.isNotEmpty) {
       final users = await UserRepository.instance.getUsers(toAdd);
       final byId = {for (final u in users) u.uid: u};
+      // Join coins for a roster arrival. This is the one join path that does
+      // NOT go through [joinMatch] — it writes its players in a single batch —
+      // so it pays them itself, in that same batch, rather than firing a
+      // transaction per member and making a fifteen-man squad contend on one
+      // document. `byId` is the profile-exists guard [_awardMatchCoins] gets
+      // from its transaction: `getUsers` only returns documents that are
+      // really there, so a `g_…` id or a deleted account is simply absent.
+      final joinPoints = RewardsRepository.current.joinMatchPoints;
+      final alreadyPaid = joinPoints > 0
+          ? (((await _matches.doc(matchId).get()).data()?['awardedCoinUids']
+                      as List?) ??
+                  const [])
+              .map((e) => '$e')
+              .toSet()
+          : const <String>{};
+      final toPay = joinPoints > 0
+          ? toAdd
+              .where((u) => byId.containsKey(u) && !alreadyPaid.contains(u))
+              .toList()
+          : const <String>[];
       final batch = _db.batch();
       for (final uid in toAdd) {
         final u = byId[uid];
@@ -596,9 +704,28 @@ class MatchRepository {
           ).toMap(),
         );
       }
-      batch.update(_matches.doc(matchId),
-          {'playerUids': FieldValue.arrayUnion(toAdd)});
+      for (final uid in toPay) {
+        batch.update(_users.doc(uid), {
+          'points': FieldValue.increment(joinPoints),
+        });
+      }
+      batch.update(_matches.doc(matchId), {
+        'playerUids': FieldValue.arrayUnion(toAdd),
+        if (toPay.isNotEmpty)
+          'awardedCoinUids': FieldValue.arrayUnion(toPay),
+      });
       await batch.commit();
+      for (final uid in toPay) {
+        try {
+          await NotificationRepository.instance.emit(
+            uid,
+            title: 'Match joined',
+            body: 'You earned +$joinPoints points for joining a match.',
+            category: NotifCategory.points,
+            route: '/home',
+          );
+        } catch (_) {/* best-effort — the points are already banked */}
+      }
     }
     await _adoptTeamCaptain(matchId, team, side);
   }

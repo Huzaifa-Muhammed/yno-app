@@ -188,7 +188,39 @@ export async function deleteSubcollection(env, parentPath, collectionId) {
  * `writes` are raw REST write objects; use [serverTime] and [appendToArray] to
  * build the transforms.
  */
+/**
+ * The document path written more than once in `writes`, or null.
+ *
+ * Firestore's `:commit` allows **one write per document per request** and
+ * rejects the whole batch otherwise. That is easy to trip the moment a second
+ * feature wants a field on a document some other part of the join already
+ * touches — `users/{uid}` carries both the profile write and the join-coin
+ * increment, `matches/{id}` both `playerUids` and `awardedCoinUids` — and the
+ * failure arrives as an opaque 400 with the join already refused. Two
+ * transforms on one document belong in ONE write’s `fieldTransforms`; a
+ * transform on a document this same commit is creating belongs in that
+ * write's `updateTransforms`.
+ */
+export function duplicateWriteDocument(writes) {
+  const seen = new Set();
+  for (const w of writes || []) {
+    const name = w?.update?.name ?? w?.transform?.document ?? w?.delete;
+    if (!name) continue;
+    if (seen.has(name)) return name;
+    seen.add(name);
+  }
+  return null;
+}
+
 export async function commit(env, writes) {
+  // Fail with the offending document name rather than Firestore’s 400, which
+  // does not say which one.
+  const dupe = duplicateWriteDocument(writes);
+  if (dupe) {
+    throw new Error(
+        `firestore commit builds two writes for ${dupe} — merge them into one`
+        + ` write (see duplicateWriteDocument)`);
+  }
   const token = await accessToken(env);
   const res = await fetch(`${base(env)}:commit`, {
     method: 'POST',
@@ -216,6 +248,24 @@ export const serverTime = (fieldPath) =>
 /** `FieldValue.arrayUnion([value])` for a REST write. */
 export const appendToArray = (fieldPath, value) =>
     ({ fieldPath, appendMissingElements: { values: [value] } });
+
+/** `FieldValue.increment(n)` for a REST write. */
+export const incrementBy = (fieldPath, n) =>
+    ({ fieldPath, increment: v.int(n) });
+
+/**
+ * One field of a raw document as a plain array of strings.
+ *
+ * `fields()` cannot do this: it flattens through `plain()`, which has no
+ * `arrayValue` case and hands back null. Everything the worker read until now
+ * was a scalar, so that was never felt — `awardedCoinUids` is the first array
+ * it has to actually look inside.
+ */
+export function stringArray(doc, fieldPath) {
+  const values = doc?.fields?.[fieldPath]?.arrayValue?.values;
+  if (!Array.isArray(values)) return [];
+  return values.map((x) => x?.stringValue).filter((x) => typeof x === 'string');
+}
 
 /** Resolve a match by join code, mirroring MatchRepository.findByCode. */
 export async function findMatchByCode(env, rawCode) {

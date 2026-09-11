@@ -50,10 +50,14 @@ class _AdminGate extends StatelessWidget {
   }
 }
 
-/// Email + password login for the super-admin panel. On the first successful
-/// attempt with the configured super-admin credentials it bootstraps (creates)
-/// the account; afterwards it signs in normally. Anyone who isn't in
-/// [kSuperAdmins] is signed straight back out.
+/// Email + password login for the super-admin panel.
+///
+/// Sign-in only. It used to create the super-admin account on the first login
+/// that matched a password compiled into `kSuperAdminPassword` — which meant
+/// the panel's password sat in a public repository, and anyone who reached the
+/// page before the real admin did could claim the account. The account is now
+/// made by hand in the Firebase console and this screen only authenticates
+/// against it. Anyone who isn't in [kSuperAdmins] is signed straight back out.
 class _AdminLogin extends StatefulWidget {
   const _AdminLogin();
 
@@ -89,24 +93,7 @@ class _AdminLoginState extends State<_AdminLogin> {
     });
     final auth = FirebaseAuth.instance;
     try {
-      try {
-        await auth.signInWithEmailAndPassword(
-            email: email, password: password);
-      } on FirebaseAuthException catch (e) {
-        // First run: bootstrap the super-admin account, but ONLY when the
-        // entered credentials exactly match the configured ones, so the account
-        // is never created with a typo'd password.
-        final noAccount =
-            e.code == 'user-not-found' || e.code == 'invalid-credential';
-        if (noAccount &&
-            email == kSuperAdminEmail &&
-            password == kSuperAdminPassword) {
-          await auth.createUserWithEmailAndPassword(
-              email: email, password: password);
-        } else {
-          rethrow;
-        }
-      }
+      await auth.signInWithEmailAndPassword(email: email, password: password);
       // Signed in — but only the allowlisted account may use the panel.
       if (!kSuperAdmins.contains(auth.currentUser?.email)) {
         await auth.signOut();
@@ -138,7 +125,10 @@ class _AdminLoginState extends State<_AdminLogin> {
       case 'invalid-credential':
       case 'wrong-password':
       case 'user-not-found':
-        return 'Wrong email or password.';
+        // Also what a never-created account looks like: Firebase deliberately
+        // does not distinguish "no such user" from "wrong password".
+        return 'Wrong email or password. If this is a new project, create the '
+            'admin account in Firebase console → Authentication → Users.';
       case 'invalid-email':
         return 'That email address is not valid.';
       case 'operation-not-allowed':

@@ -130,8 +130,9 @@ service cloud.firestore {
     }
 
     // App-wide configuration the super-admin panel edits — currently only
-    // `config/rewards`, the point values for referrals, MOTM and the community
-    // award (they were compiled-in constants until 2026-09-07).
+    // `config/rewards`: the point values for referrals, MOTM, the community
+    // award (compiled-in constants until 2026-09-07) and the join/create match
+    // bonuses (never compiled in at all).
     //
     // World-readable on purpose: every client shows these numbers ("+10 pts")
     // and reads them before sign-in on the welcome/referral screens. There is

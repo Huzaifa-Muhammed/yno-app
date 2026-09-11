@@ -4,11 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// How many points each reward is worth (`config/rewards`).
 ///
-/// These were three `const` ints — `kReferralPoints` (10),
+/// These began as three `const` ints — `kReferralPoints` (10),
 /// `kCommunityPlayerPoints` (20) and `kManOfMatchPoints` (30) — which meant
 /// changing what a referral is worth required a new build in every user's
 /// hands. They are now one Firestore document the super-admin panel edits, and
-/// the change reaches every client without a release.
+/// the change reaches every client without a release. [joinMatchPoints] and
+/// [createMatchPoints] were added later and were never compiled in at all.
 ///
 /// ⚠️ The defaults below are load-bearing. They are what every client uses
 /// before the document has loaded, and what the app falls back to if the read
@@ -20,6 +21,8 @@ class RewardsConfig {
     this.referralPoints = 10,
     this.communityPlayerPoints = 20,
     this.manOfMatchPoints = 30,
+    this.joinMatchPoints = 50,
+    this.createMatchPoints = 100,
   });
 
   /// Awarded to BOTH sides of a referral — the referrer and the new account.
@@ -31,17 +34,34 @@ class RewardsConfig {
   /// Awarded to the algorithm Man of the Match.
   final int manOfMatchPoints;
 
+  /// Awarded once to a player the first time they enter a given match, however
+  /// they got there — a code, an accepted invite, a saved-team roster, or the
+  /// host adding them by hand. Once per match per player, so leaving and
+  /// rejoining pays nothing the second time (`awardedCoinUids` on the match
+  /// document is what remembers). An accountless `g_…` guest has no profile to
+  /// credit and gets nothing.
+  final int joinMatchPoints;
+
+  /// Awarded to the creator of a match, once, the moment it is created.
+  ///
+  /// The creator gets this INSTEAD of [joinMatchPoints], not as well as it:
+  /// both fill the same one-award-per-match slot, so creating a match and
+  /// playing in it pays 100, never 150.
+  final int createMatchPoints;
+
   Map<String, dynamic> toMap() => {
         'referralPoints': referralPoints,
         'communityPlayerPoints': communityPlayerPoints,
         'manOfMatchPoints': manOfMatchPoints,
+        'joinMatchPoints': joinMatchPoints,
+        'createMatchPoints': createMatchPoints,
       };
 
   factory RewardsConfig.fromMap(Map<String, dynamic>? d) {
     if (d == null) return const RewardsConfig();
     const fallback = RewardsConfig();
-    // Each field falls back independently: a document written with only one of
-    // the three (an older panel, a hand edit) must not zero the other two.
+    // Each field falls back independently: a document written with only some
+    // of the keys (an older panel, a hand edit) must not zero the rest.
     int read(String key, int fallbackValue) {
       final v = d[key];
       if (v is int && v >= 0) return v;
@@ -54,6 +74,8 @@ class RewardsConfig {
       communityPlayerPoints:
           read('communityPlayerPoints', fallback.communityPlayerPoints),
       manOfMatchPoints: read('manOfMatchPoints', fallback.manOfMatchPoints),
+      joinMatchPoints: read('joinMatchPoints', fallback.joinMatchPoints),
+      createMatchPoints: read('createMatchPoints', fallback.createMatchPoints),
     );
   }
 
@@ -61,12 +83,16 @@ class RewardsConfig {
     int? referralPoints,
     int? communityPlayerPoints,
     int? manOfMatchPoints,
+    int? joinMatchPoints,
+    int? createMatchPoints,
   }) =>
       RewardsConfig(
         referralPoints: referralPoints ?? this.referralPoints,
         communityPlayerPoints:
             communityPlayerPoints ?? this.communityPlayerPoints,
         manOfMatchPoints: manOfMatchPoints ?? this.manOfMatchPoints,
+        joinMatchPoints: joinMatchPoints ?? this.joinMatchPoints,
+        createMatchPoints: createMatchPoints ?? this.createMatchPoints,
       );
 }
 
