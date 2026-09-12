@@ -24,6 +24,11 @@ const kJoinBaseUrl = 'https://nellab.org/join';
 ///
 /// No slash before the query: the route is `/join`, and `/join/?code=…` would
 /// rely on the router's trailing-slash leniency for no reason.
+///
+/// ⚠️ **Uncalled since 2026-09-12** — the lobby stopped handing out join links
+/// (client request; see `lobby_screen._codeCard`). Left in place deliberately:
+/// the page it points at is still live and still serves anyone holding an old
+/// link, so restoring the button is one call site, not a URL hunt.
 String joinLink(String code) => '$kJoinBaseUrl?code=$code';
 
 /// Base URL of the referral landing page.

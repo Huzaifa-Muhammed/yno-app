@@ -337,3 +337,25 @@ wipe an older match's clock the moment its creator opened the edit screen.
 `live.extendClock` / `live.min` / `live.minAdded` were kept: the live settings
 sheet still offers +5/+10, gated on `timingMode != none`, which only old matches
 now satisfy.
+
+## Removed 2026-09-12 — the lobby's share-link button
+
+The match lobby's code card lost its 🔗 share button and the tappable
+`https://nellab.org/join?code=…` row beneath the hint. Joining by link is
+paused at the client's request; the **code itself stays** — it is what the
+in-app Join screen and the web `/join` page take — and players are otherwise
+added from Add Player (a guest by name, or a registered player by username
+search). Teams were deliberately left alone: their invite code still shares.
+
+`match.oneSharedLink` was **not lost** — it was reworded and renamed to
+`match.oneSharedCode` ('One shared link' → 'One shared code'), since the card
+no longer hands out a link.
+
+### tr_match.dart — `match.*` (share-link strings)
+```
+  'match.shareInvite': [
+    'Join my match on YNO! Code:',
+    'انضم إلى مباراتي على YNO! الرمز:'
+  ],
+  'match.linkCopied': ['Share link copied', 'تم نسخ رابط المشاركة'],
+```

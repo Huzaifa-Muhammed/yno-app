@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../l10n/l10n.dart';
-import '../links.dart';
 import '../routes.dart';
 import '../services/auth_repository.dart';
 import '../services/match_repository.dart';
@@ -67,8 +65,6 @@ class _LobbyScreenState extends State<LobbyScreen> {
     final m = RegExp(r'^(\d+)v').firstMatch(format);
     return m != null ? int.parse(m.group(1)!) : null;
   }
-
-  String _linkFor(String code) => joinLink(code);
 
   /// Who may add/remove players on a side (see [MatchModel.canManageSide]).
   bool _canManage(MatchModel m, TeamSide side) =>
@@ -216,12 +212,11 @@ class _LobbyScreenState extends State<LobbyScreen> {
   Widget _codeCard(
       BuildContext context, MatchModel match, TeamSide? side, bool amAdmin) {
     final code = side == null ? match.code : match.codeFor(side);
-    final link = _linkFor(code);
     final label = side == null
         ? tr('match.matchCodeLabel')
         : '${tr('match.codeLabel')} · ${match.teamName(side).toUpperCase()}';
     final hint = side == null
-        ? tr('match.oneSharedLink')
+        ? tr('match.oneSharedCode')
         : '${tr('match.joinCodeLandPre')} ${match.teamName(side)}.';
     return SurfaceCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
@@ -254,46 +249,21 @@ class _LobbyScreenState extends State<LobbyScreen> {
                 },
                 child: const Text('📋', style: TextStyle(fontSize: 20)),
               ),
-              const SizedBox(width: 14),
-              GestureDetector(
-                onTap: () => Share.share(
-                    '${tr('match.shareInvite')} $code\n$link'),
-                child: const Text('🔗', style: TextStyle(fontSize: 20)),
-              ),
+              // A 🔗 share button used to sit here, pushing the code plus
+              // `https://nellab.org/join?code=…` through the OS share sheet,
+              // and a tappable link row sat below the hint. Both paused
+              // 2026-09-12 at the client's request: nobody joins by link for
+              // now — a captain or admin adds people from Add Player (a guest
+              // by name, or a registered player by username search), and the
+              // code above is still what the in-app Join screen takes.
+              //
+              // Restoring it is this button plus that row, `_linkFor`, the
+              // `share_plus` / `links.dart` imports, and the two strings
+              // archived in `.claude/l10n_removed_keys.md`.
             ],
           ),
           const SizedBox(height: 6),
           Text(hint, style: AppText.barlow(size: 12, color: AppColors.dim2)),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: link));
-              showYnoToast(context, tr('match.linkCopied'));
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                border: Border.all(color: AppColors.line),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(link,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.barlow(size: 12, color: AppColors.dim)),
-                  ),
-                  Text(tr('common.copy'),
-                      style: AppText.barlow(
-                          size: 12,
-                          weight: FontWeight.w700,
-                          color: AppColors.txt)),
-                ],
-              ),
-            ),
-          ),
         ],
       ),
     );

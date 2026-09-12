@@ -238,20 +238,19 @@ const Map<String, List<String>> trMatch = {
   'match.toStartSuffix': ['to start.', 'للبدء.'],
   'match.matchCodeLabel': ['MATCH CODE', 'رمز المباراة'],
   'match.codeLabel': ['CODE', 'الرمز'],
-  'match.oneSharedLink': [
-    'One shared link — you assign players to teams.',
-    'رابط واحد مشترك — توزّع اللاعبين على الفرق.'
+  // Was `match.oneSharedLink` until 2026-09-12 — the lobby no longer hands out
+  // a join link, only this code.
+  'match.oneSharedCode': [
+    'One shared code — you assign players to teams.',
+    'رمز واحد مشترك — توزّع اللاعبين على الفرق.'
   ],
   'match.joinCodeLandPre': [
     'Players who join with this code land on',
     'اللاعبون الذين ينضمون بهذا الرمز ينضمون إلى'
   ],
   'match.codeCopied': ['Code copied', 'تم نسخ الرمز'],
-  'match.shareInvite': [
-    'Join my match on YNO! Code:',
-    'انضم إلى مباراتي على YNO! الرمز:'
-  ],
-  'match.linkCopied': ['Share link copied', 'تم نسخ رابط المشاركة'],
+  // `match.shareInvite` and `match.linkCopied` were archived 2026-09-12 with
+  // the lobby's share-link button — see `.claude/l10n_removed_keys.md`.
   'match.waitingToJoin': ['WAITING TO JOIN', 'في انتظار الانضمام'],
   'match.guest': ['Guest', 'ضيف'],
   'match.wants': ['wants', 'يريد'],
